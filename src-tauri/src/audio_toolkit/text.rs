@@ -476,9 +476,48 @@ pub fn normalize_transcription_output(text: &str) -> String {
     normalized.trim().to_string()
 }
 
+/// Words that mean an LLM cleanup can change the text: spoken self-corrections
+/// ("five no six", "I mean", "scratch that"), spoken punctuation, and fillers
+/// that survive when filler removal is off. Matching is deliberately broad: a
+/// false hit only costs one cleanup call, a miss pastes an uncorrected sentence.
+static CLEANUP_CUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)\b(no|actually|i mean|scratch that|wait|sorry|rather|make it|correction|period|full stop|comma|question mark|exclamation (mark|point)|new line|new paragraph|um+|uh+|erm)\b",
+    )
+    .unwrap()
+});
+
+/// Returns `true` when a transcript may need the LLM cleanup step. Clean
+/// transcripts skip it, so they paste without the cleanup model's delay.
+pub fn needs_llm_cleanup(text: &str) -> bool {
+    CLEANUP_CUE_PATTERN.is_match(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_needs_llm_cleanup_on_self_corrections() {
+        assert!(needs_llm_cleanup("The meeting is at five no six pm."));
+        assert!(needs_llm_cleanup("Push it to Friday, actually Thursday."));
+        assert!(needs_llm_cleanup("Meet at the cafe, I mean the one near the station."));
+        assert!(needs_llm_cleanup("Send it today. Scratch that, tomorrow."));
+    }
+
+    #[test]
+    fn test_needs_llm_cleanup_on_spoken_punctuation_and_fillers() {
+        assert!(needs_llm_cleanup("Thanks period see you soon"));
+        assert!(needs_llm_cleanup("Is it ready question mark"));
+        assert!(needs_llm_cleanup("So umm we ship it"));
+    }
+
+    #[test]
+    fn test_clean_transcript_skips_llm_cleanup() {
+        assert!(!needs_llm_cleanup("Send the report to Priya and cc Rahul on it."));
+        assert!(!needs_llm_cleanup("Can you check whether the booking widget loads on mobile?"));
+        assert!(!needs_llm_cleanup("Notice the commas in the knowledge base."));
+    }
 
     /// Exercise the complete cleanup sequence with an explicitly selected
     /// language. Individual tests below predate the split between filler
