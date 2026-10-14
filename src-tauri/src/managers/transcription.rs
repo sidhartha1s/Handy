@@ -1139,7 +1139,11 @@ impl TranscriptionManager {
     fn settings_with_context_words(&self) -> AppSettings {
         let mut settings = get_settings(&self.app_handle);
         for word in std::mem::take(&mut *self.context_words.lock().unwrap()) {
-            if !settings.custom_words.iter().any(|w| w.eq_ignore_ascii_case(&word)) {
+            if !settings
+                .custom_words
+                .iter()
+                .any(|w| w.eq_ignore_ascii_case(&word))
+            {
                 settings.custom_words.push(word);
             }
         }

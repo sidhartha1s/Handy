@@ -86,11 +86,20 @@ mod windows_uia {
 
     /// Document text, else the value, else the name. Password boxes are never read.
     unsafe fn element_text(element: &IUIAutomationElement) -> String {
-        if element.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(true) {
+        if element
+            .CurrentIsPassword()
+            .map(|b| b.as_bool())
+            .unwrap_or(true)
+        {
             return String::new();
         }
-        if let Ok(pattern) = element.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId) {
-            if let Ok(text) = pattern.DocumentRange().and_then(|r| r.GetText(MAX_ELEMENT_CHARS)) {
+        if let Ok(pattern) =
+            element.GetCurrentPatternAs::<IUIAutomationTextPattern>(UIA_TextPatternId)
+        {
+            if let Ok(text) = pattern
+                .DocumentRange()
+                .and_then(|r| r.GetText(MAX_ELEMENT_CHARS))
+            {
                 return text.to_string();
             }
         }
@@ -101,7 +110,10 @@ mod windows_uia {
                 return value.to_string();
             }
         }
-        element.CurrentName().map(|n| n.to_string()).unwrap_or_default()
+        element
+            .CurrentName()
+            .map(|n| n.to_string())
+            .unwrap_or_default()
     }
 }
 
