@@ -98,9 +98,7 @@ pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
     for missing in pasted_tokens.iter().filter(|p| !now_tokens.contains(p)) {
         let best = new_tokens
             .iter()
-            .filter(|n| {
-                n.chars().count() >= 3 && looks_like_a_name(missing, n, starts.contains(n))
-            })
+            .filter(|n| n.chars().count() >= 3 && looks_like_a_name(missing, n, starts.contains(n)))
             .map(|n| {
                 let score =
                     strsim::normalized_levenshtein(&missing.to_lowercase(), &n.to_lowercase());
@@ -120,8 +118,8 @@ pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
 /// A capital first letter means nothing when the word starts a sentence or a
 /// line: "The" and "Now" there are grammar, not names.
 fn looks_like_a_name(pasted: &str, fixed: &str, starts_sentence: bool) -> bool {
-    let marked = fixed.chars().any(|c| c.is_ascii_digit())
-        || fixed.chars().skip(1).any(char::is_uppercase);
+    let marked =
+        fixed.chars().any(|c| c.is_ascii_digit()) || fixed.chars().skip(1).any(char::is_uppercase);
     if pasted.eq_ignore_ascii_case(fixed) || starts_sentence {
         marked
     } else {
