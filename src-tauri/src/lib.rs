@@ -13,6 +13,7 @@ mod context_words;
 pub mod engine_supervisor;
 mod helpers;
 mod input;
+mod learn_words;
 mod llm_client;
 mod managers;
 mod memory;
