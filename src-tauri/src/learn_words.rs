@@ -43,9 +43,33 @@ pub fn spawn_learn(app: AppHandle, pasted: String) {
 
 fn tokens(text: &str) -> Vec<&str> {
     text.split_whitespace()
+        .flat_map(split_sentences)
         .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
         .filter(|t| !t.is_empty())
         .collect()
+}
+
+/// Splits "lunch.Ask" into "lunch." and "Ask": two dictations pasted back to
+/// back with no space between them are two words, not a new name to learn.
+/// A split needs lower case before the stop and "Xy" after it, so names such
+/// as "ASP.NET", "Node.JS" or "llama.cpp" stay whole.
+fn split_sentences(token: &str) -> Vec<&str> {
+    let chars: Vec<(usize, char)> = token.char_indices().collect();
+    let mut parts = Vec::new();
+    let mut start = 0;
+    for w in chars.windows(4) {
+        let [(_, before), (_, stop), (at, upper), (_, lower)] = [w[0], w[1], w[2], w[3]];
+        if before.is_lowercase()
+            && matches!(stop, '.' | '!' | '?')
+            && upper.is_uppercase()
+            && lower.is_lowercase()
+        {
+            parts.push(&token[start..at]);
+            start = at;
+        }
+    }
+    parts.push(&token[start..]);
+    parts
 }
 
 /// Spellings typed over pasted words. For each pasted word no longer in the
