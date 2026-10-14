@@ -809,6 +809,16 @@ fn default_post_process_models() -> HashMap<String, String> {
     map
 }
 
+/// Id of the local cleanup prompt (spoken corrections, fillers, punctuation
+/// only). The deploy script installs the prompt text under this id; only this
+/// prompt is skipped for transcripts with no correction cues.
+pub const LEAN_CLEANUP_PROMPT_ID: &str = "local_lean_cleanup";
+
+/// Whether the selected post-process prompt is the lean cleanup prompt.
+pub fn uses_lean_cleanup_prompt(settings: &AppSettings) -> bool {
+    settings.post_process_selected_prompt_id.as_deref() == Some(LEAN_CLEANUP_PROMPT_ID)
+}
+
 fn default_post_process_prompts() -> Vec<LLMPrompt> {
     vec![LLMPrompt {
         id: "default_improve_transcriptions".to_string(),
