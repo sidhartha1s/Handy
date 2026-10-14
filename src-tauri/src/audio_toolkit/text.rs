@@ -799,6 +799,19 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_custom_words_soundex_alone_does_not_merge_ordinary_words() {
+        // "and roast" shares Soundex A536 with "Anthropic" but differs in 5 of
+        // 9 letters; seen replacing "roast beef" in a real dictation.
+        let text = "with Christmas and roast beef looming";
+        let custom_words = vec!["Anthropic".to_string(), "Tauri".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, text);
+        // A close phonetic match still corrects.
+        let result = apply_custom_words("ask Anthropik today", &custom_words, 0.18);
+        assert_eq!(result, "ask Anthropic today");
+    }
+
+    #[test]
     fn test_apply_custom_words_ngram_three_words() {
         let text = "use Chat G P T for this";
         let custom_words = vec!["ChatGPT".to_string()];
