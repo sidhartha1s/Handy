@@ -21,16 +21,21 @@ const MAX_ELEMENT_CHARS: i32 = 4000;
 pub fn spawn_capture(tm: Arc<TranscriptionManager>) {
     tm.set_context_words(Vec::new());
     std::thread::spawn(move || {
-        let text = read_screen_text();
+        let text = read_screen_text(true);
         let words = distinctive_words(&text, MAX_CONTEXT_WORDS);
         log::debug!("Context words from screen: {}", words.len());
         tm.set_context_words(words);
     });
 }
 
+/// Text of the focused text box, read the same way as the context words.
+pub fn read_focused_text() -> String {
+    read_screen_text(false)
+}
+
 #[cfg(windows)]
-fn read_screen_text() -> String {
-    match windows_uia::read_focus_and_pointer() {
+fn read_screen_text(include_pointer: bool) -> String {
+    match windows_uia::read_focus_and_pointer(include_pointer) {
         Ok(text) => text,
         Err(e) => {
             log::debug!("Context read failed: {}", e);
@@ -40,7 +45,7 @@ fn read_screen_text() -> String {
 }
 
 #[cfg(not(windows))]
-fn read_screen_text() -> String {
+fn read_screen_text(_include_pointer: bool) -> String {
     String::new()
 }
 
@@ -58,24 +63,24 @@ mod windows_uia {
     };
     use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
-    /// Text of the focused element plus the element under the mouse pointer.
-    pub fn read_focus_and_pointer() -> windows::core::Result<String> {
+    /// Text of the focused element, plus the element under the mouse pointer when asked.
+    pub fn read_focus_and_pointer(include_pointer: bool) -> windows::core::Result<String> {
         unsafe {
             CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
-            let result = read_with_com();
+            let result = read_with_com(include_pointer);
             CoUninitialize();
             result
         }
     }
 
-    unsafe fn read_with_com() -> windows::core::Result<String> {
+    unsafe fn read_with_com(include_pointer: bool) -> windows::core::Result<String> {
         let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)?;
         let mut text = String::new();
         if let Ok(focused) = uia.GetFocusedElement() {
             text.push_str(&element_text(&focused));
         }
         let mut pointer = POINT::default();
-        if GetCursorPos(&mut pointer).is_ok() {
+        if include_pointer && GetCursorPos(&mut pointer).is_ok() {
             if let Ok(under_mouse) = uia.ElementFromPoint(pointer) {
                 text.push('\n');
                 text.push_str(&element_text(&under_mouse));
