@@ -1406,7 +1406,7 @@ impl TranscriptionManager {
                 }
             };
             language = language.or(transcript.language);
-            let piece = transcript.text.trim().to_string();
+            let text = transcript.text.trim().to_string();
             if !text.is_empty() {
                 texts.push(text);
             }
