@@ -478,7 +478,8 @@ pub fn normalize_transcription_output(text: &str) -> String {
 
 /// Words that mean an LLM cleanup can change the text: spoken self-corrections
 /// ("five no six", "I mean", "scratch that"), spoken punctuation, and fillers
-/// that survive when filler removal is off. Matching is deliberately broad: a
+/// that survive when filler removal is off ("you know", "so yeah"). "sari" is
+/// how the speech model often hears "sorry". Matching is deliberately broad: a
 /// false hit only costs one cleanup call, a miss pastes an uncorrected sentence.
 static CLEANUP_CUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
