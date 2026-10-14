@@ -1407,10 +1407,9 @@ impl TranscriptionManager {
             };
             language = language.or(transcript.language);
             let piece = transcript.text.trim().to_string();
-            if !piece.is_empty() {
-                texts.push(piece);
+            if !text.is_empty() {
+                texts.push(text);
             }
-            start = end;
         }
         Ok(RunOutcome {
             text: texts.join(" "),
