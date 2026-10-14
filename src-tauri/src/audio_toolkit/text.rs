@@ -501,7 +501,9 @@ mod tests {
     fn test_needs_llm_cleanup_on_self_corrections() {
         assert!(needs_llm_cleanup("The meeting is at five no six pm."));
         assert!(needs_llm_cleanup("Push it to Friday, actually Thursday."));
-        assert!(needs_llm_cleanup("Meet at the cafe, I mean the one near the station."));
+        assert!(needs_llm_cleanup(
+            "Meet at the cafe, I mean the one near the station."
+        ));
         assert!(needs_llm_cleanup("Send it today. Scratch that, tomorrow."));
     }
 
@@ -514,9 +516,15 @@ mod tests {
 
     #[test]
     fn test_clean_transcript_skips_llm_cleanup() {
-        assert!(!needs_llm_cleanup("Send the report to Priya and cc Rahul on it."));
-        assert!(!needs_llm_cleanup("Can you check whether the booking widget loads on mobile?"));
-        assert!(!needs_llm_cleanup("Notice the commas in the knowledge base."));
+        assert!(!needs_llm_cleanup(
+            "Send the report to Priya and cc Rahul on it."
+        ));
+        assert!(!needs_llm_cleanup(
+            "Can you check whether the booking widget loads on mobile?"
+        ));
+        assert!(!needs_llm_cleanup(
+            "Notice the commas in the knowledge base."
+        ));
     }
 
     /// Exercise the complete cleanup sequence with an explicitly selected
