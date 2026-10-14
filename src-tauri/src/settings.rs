@@ -585,6 +585,10 @@ fn default_update_checks_enabled() -> bool {
     true
 }
 
+fn default_live_streaming() -> bool {
+    true
+}
+
 fn default_show_whats_new_on_update() -> bool {
     true
 }
