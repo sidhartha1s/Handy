@@ -525,6 +525,18 @@ mod tests {
         assert!(needs_llm_cleanup("Thanks period see you soon"));
         assert!(needs_llm_cleanup("Is it ready question mark"));
         assert!(needs_llm_cleanup("So umm we ship it"));
+        // Seen in the owner's dictation: only "you know" marked this as spoken.
+        assert!(needs_llm_cleanup(
+            "If I read it back, there are, you know, sentences getting stitched together."
+        ));
+        assert!(needs_llm_cleanup("Sari, the other room."));
+    }
+
+    #[test]
+    fn test_needs_llm_cleanup_on_unpunctuated_runs() {
+        assert!(needs_llm_cleanup(
+            "doing that and it is editing it a bit too much if i read it back there are sentences getting stitched together it is fine i understand this is good for an email"
+        ));
     }
 
     #[test]
