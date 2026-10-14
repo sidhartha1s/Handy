@@ -1496,6 +1496,8 @@ mod tests {
         // matching legacy mode rather than the new hold-or-toggle default.
         assert_eq!(settings.shortcut_activation, ShortcutActivation::Toggle);
         assert_eq!(settings.transcribe_gpu_device, None);
+        // Stores from before the key existed keep transcribing while recording.
+        assert!(settings.live_streaming);
     }
 
     #[test]
