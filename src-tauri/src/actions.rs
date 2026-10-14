@@ -691,6 +691,9 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
+                            // Clean transcripts skip the LLM cleanup and paste straight away.
+                            let post_process = post_process
+                                && crate::audio_toolkit::needs_llm_cleanup(&transcription);
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
