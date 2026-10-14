@@ -1,5 +1,5 @@
 use crate::audio_toolkit::{
-    apply_custom_words, detect_output_language, normalize_transcription_output,
+    apply_custom_words, detect_output_language, normalize_transcription_output, quiet_cut_points,
     remove_filler_words, OutputLanguageEvidence,
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
@@ -39,6 +39,11 @@ use transcribe_rs::{
 };
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Longest audio Moonshine gets in one run (16 kHz samples), and how far before
+/// that limit to look for a pause to cut at.
+const MOONSHINE_MAX_PIECE: usize = 20 * 16_000;
+const MOONSHINE_CUT_SEARCH: usize = 5 * 16_000;
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
@@ -1368,25 +1373,49 @@ impl TranscriptionManager {
             run_options.family.is_some()
         );
 
-        let transcript = match self.engine.transcribe(audio, run_options) {
-            Ok(transcript) => transcript,
-            Err(EngineError::Cancelled) => return Err(EngineError::Cancelled.into()),
-            Err(e) => {
-                self.forget_model_if_engine_dropped(active_model, &e.to_string());
-                return Err(anyhow::anyhow!(
-                    "transcribe-cpp transcription failed: {}",
-                    e
-                ));
-            }
+        // Moonshine ends early on long takes: on a 96 s recording it returned
+        // only the first ~45 s, while 20 s pieces gave back every word.
+        let cuts = if info.arch.starts_with("moonshine") {
+            quiet_cut_points(&audio, MOONSHINE_MAX_PIECE, MOONSHINE_CUT_SEARCH)
+        } else {
+            Vec::new()
         };
+        if !cuts.is_empty() {
+            debug!("Moonshine: transcribing {} pieces", cuts.len() + 1);
+        }
+        let mut texts = Vec::new();
+        let mut language = None;
+        let mut start = 0;
+        for end in cuts.into_iter().chain([audio.len()]) {
+            let transcript = match self
+                .engine
+                .transcribe(audio[start..end].to_vec(), run_options.clone())
+            {
+                Ok(transcript) => transcript,
+                Err(EngineError::Cancelled) => return Err(EngineError::Cancelled.into()),
+                Err(e) => {
+                    self.forget_model_if_engine_dropped(active_model, &e.to_string());
+                    return Err(anyhow::anyhow!(
+                        "transcribe-cpp transcription failed: {}",
+                        e
+                    ));
+                }
+            };
+            language = language.or(transcript.language);
+            let piece = transcript.text.trim().to_string();
+            if !piece.is_empty() {
+                texts.push(piece);
+            }
+            start = end;
+        }
         Ok(RunOutcome {
-            text: transcript.text,
+            text: texts.join(" "),
             languages,
             applied_language_hint,
             output_was_translated,
             // Whisper's audio-based LID (auto mode only; `None` when a
             // language hint was passed).
-            model_detected_language: transcript.language,
+            model_detected_language: language,
             model_is_whisper,
         })
     }

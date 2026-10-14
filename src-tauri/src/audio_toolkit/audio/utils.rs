@@ -48,3 +48,45 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
     debug!("Saved WAV file: {:?}", file_path.as_ref());
     Ok(())
 }
+
+/// Where to cut `samples` so no piece is longer than `max_len`: each cut is the
+/// quietest 30 ms frame (16 kHz) in the last `search_len` samples before the
+/// limit, so cuts land in pauses between words rather than inside them.
+pub fn quiet_cut_points(samples: &[f32], max_len: usize, search_len: usize) -> Vec<usize> {
+    const FRAME: usize = 480;
+    let mut cuts = Vec::new();
+    let mut start = 0;
+    while samples.len() - start > max_len {
+        let from = start + max_len - search_len.min(max_len);
+        let quietest = (from..start + max_len - FRAME)
+            .step_by(FRAME)
+            .min_by(|&a, &b| {
+                let energy = |at: usize| samples[at..at + FRAME].iter().map(|s| s * s).sum::<f32>();
+                energy(a).total_cmp(&energy(b))
+            })
+            .unwrap_or(from);
+        start = quietest + FRAME / 2;
+        cuts.push(start);
+    }
+    cuts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quiet_cut_points;
+
+    #[test]
+    fn cuts_long_audio_in_its_pauses() {
+        // 50 s of tone with silent gaps at 17 s and 36 s.
+        let mut samples = vec![0.5f32; 50 * 16_000];
+        for gap in [17 * 16_000, 36 * 16_000] {
+            samples[gap..gap + 4_800].fill(0.0);
+        }
+        let cuts = quiet_cut_points(&samples, 20 * 16_000, 5 * 16_000);
+        assert_eq!(cuts.len(), 2);
+        for (cut, gap) in cuts.iter().zip([17 * 16_000, 36 * 16_000]) {
+            assert!((gap..gap + 4_800).contains(cut), "cut {cut} missed the gap at {gap}");
+        }
+        assert!(quiet_cut_points(&samples[..20 * 16_000], 20 * 16_000, 5 * 16_000).is_empty());
+    }
+}
