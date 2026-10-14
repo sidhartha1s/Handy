@@ -1334,14 +1334,18 @@ impl TranscriptionManager {
         if !cuts.is_empty() {
             debug!("Moonshine: transcribing {} pieces", cuts.len() + 1);
         }
+        // Without cuts the audio moves into the single run, uncopied, as before.
+        let pieces: Vec<Vec<f32>> = if cuts.is_empty() {
+            vec![audio]
+        } else {
+            let ends = cuts.into_iter().chain([audio.len()]);
+            let starts = std::iter::once(0).chain(ends.clone());
+            starts.zip(ends).map(|(s, e)| audio[s..e].to_vec()).collect()
+        };
         let mut texts = Vec::new();
         let mut language = None;
-        let mut start = 0;
-        for end in cuts.into_iter().chain([audio.len()]) {
-            let transcript = match self
-                .engine
-                .transcribe(audio[start..end].to_vec(), run_options.clone())
-            {
+        for piece in pieces {
+            let transcript = match self.engine.transcribe(piece, run_options.clone()) {
                 Ok(transcript) => transcript,
                 Err(EngineError::Cancelled) => return Err(EngineError::Cancelled.into()),
                 Err(e) => {
