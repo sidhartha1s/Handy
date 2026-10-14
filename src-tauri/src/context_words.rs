@@ -19,12 +19,12 @@ const MAX_ELEMENT_CHARS: i32 = 4000;
 /// Starts reading on-screen context in the background and hands the
 /// distinctive words to the transcription manager.
 pub fn spawn_capture(tm: Arc<TranscriptionManager>) {
-    tm.set_context_words(Vec::new());
+    let capture = tm.begin_context_capture();
     std::thread::spawn(move || {
         let text = read_screen_text(true);
         let words = distinctive_words(&text, MAX_CONTEXT_WORDS);
         log::debug!("Context words from screen: {}", words.len());
-        tm.set_context_words(words);
+        tm.set_context_words(capture, words);
     });
 }
 
