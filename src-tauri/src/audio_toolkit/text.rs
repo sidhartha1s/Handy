@@ -488,10 +488,18 @@ static CLEANUP_CUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
     .unwrap()
 });
 
+/// Longest run of words without a full stop, question or exclamation mark that
+/// still counts as punctuated. The speech model sometimes returns a whole piece
+/// of a long take in lower case with no punctuation at all.
+const MAX_UNPUNCTUATED_WORDS: usize = 25;
+
 /// Returns `true` when a transcript may need the LLM cleanup step. Clean
 /// transcripts skip it, so they paste without the cleanup model's delay.
 pub fn needs_llm_cleanup(text: &str) -> bool {
     CLEANUP_CUE_PATTERN.is_match(text)
+        || text
+            .split(['.', '?', '!'])
+            .any(|run| run.split_whitespace().count() > MAX_UNPUNCTUATED_WORDS)
 }
 
 #[cfg(test)]
