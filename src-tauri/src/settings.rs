@@ -417,6 +417,11 @@ pub struct AppSettings {
     pub autostart_enabled: bool,
     #[serde(default = "default_update_checks_enabled")]
     pub update_checks_enabled: bool,
+    /// Transcribe while recording when the model can stream. Off makes a
+    /// streaming model transcribe the whole recording at stop instead, which
+    /// is faster on GPUs that cannot stream in real time.
+    #[serde(default = "default_live_streaming")]
+    pub live_streaming: bool,
     #[serde(default = "default_show_whats_new_on_update")]
     pub show_whats_new_on_update: bool,
     /// The app version whose What's New the user has already seen. Fresh installs
