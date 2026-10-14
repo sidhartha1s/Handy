@@ -1,0 +1,132 @@
+//! Learn words from edits: shortly after a paste, re-read the text box. When a
+//! pasted word was changed to a close spelling that looks like a name or
+//! jargon, save that spelling to the custom words so the next dictation gets
+//! it right.
+
+use crate::context_words::read_focused_text;
+use crate::settings::{get_settings, write_settings};
+use std::time::Duration;
+use tauri::AppHandle;
+
+/// When to re-read the text box, counted from the paste.
+const CHECK_AFTER: [Duration; 2] = [Duration::from_secs(10), Duration::from_secs(30)];
+/// A fixed spelling must be at least this close to the pasted word (0 to 1).
+const MIN_SIMILARITY: f64 = 0.5;
+
+/// Re-reads the focused text box after a paste and saves corrected spellings.
+pub fn spawn_learn(app: AppHandle, pasted: String) {
+    std::thread::spawn(move || {
+        let mut waited = Duration::ZERO;
+        for at in CHECK_AFTER {
+            std::thread::sleep(at - waited);
+            waited = at;
+            let learned = corrected_words(&pasted, &read_focused_text());
+            let mut settings = get_settings(&app);
+            let before = settings.custom_words.len();
+            for word in learned {
+                if !settings
+                    .custom_words
+                    .iter()
+                    .any(|w| w.eq_ignore_ascii_case(&word))
+                {
+                    settings.custom_words.push(word);
+                }
+            }
+            let added = settings.custom_words.len() - before;
+            if added > 0 {
+                log::info!("Learned {} word(s) from an edit", added);
+                write_settings(&app, settings);
+            }
+        }
+    });
+}
+
+fn tokens(text: &str) -> Vec<&str> {
+    text.split_whitespace()
+        .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric()))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// Spellings typed over pasted words. For each pasted word no longer in the
+/// box, the closest new word in the box is learned when it looks like a name
+/// or jargon: a spelling fix needs a capital or a digit, and a fix that only
+/// changes case needs a capital after the first letter or a digit, so
+/// capitalising a sentence start ("the" to "The") is never learned. Nothing is
+/// learned when the box no longer holds most of the pasted text.
+pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
+    let pasted_tokens = tokens(pasted);
+    let now_tokens = tokens(now);
+    let kept = pasted_tokens
+        .iter()
+        .filter(|p| now_tokens.contains(p))
+        .count();
+    if pasted_tokens.is_empty() || kept * 2 < pasted_tokens.len() {
+        return Vec::new();
+    }
+    let new_tokens: Vec<&str> = now_tokens
+        .iter()
+        .copied()
+        .filter(|n| !pasted_tokens.contains(n))
+        .collect();
+    let mut learned: Vec<String> = Vec::new();
+    for missing in pasted_tokens.iter().filter(|p| !now_tokens.contains(p)) {
+        let best = new_tokens
+            .iter()
+            .filter(|n| n.chars().count() >= 3 && looks_like_a_name(missing, n))
+            .map(|n| {
+                let score =
+                    strsim::normalized_levenshtein(&missing.to_lowercase(), &n.to_lowercase());
+                (score, *n)
+            })
+            .filter(|(score, _)| *score >= MIN_SIMILARITY)
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((_, word)) = best {
+            if !learned.iter().any(|w| w == word) {
+                learned.push(word.to_string());
+            }
+        }
+    }
+    learned
+}
+
+fn looks_like_a_name(pasted: &str, fixed: &str) -> bool {
+    let has_digit = fixed.chars().any(|c| c.is_ascii_digit());
+    if pasted.eq_ignore_ascii_case(fixed) {
+        has_digit || fixed.chars().skip(1).any(char::is_uppercase)
+    } else {
+        has_digit || fixed.chars().any(char::is_uppercase)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::corrected_words;
+
+    #[test]
+    fn learns_a_corrected_name() {
+        assert_eq!(
+            corrected_words("Ask cubanetes about the deploy.", "Ask Kubernetes about the deploy."),
+            vec!["Kubernetes"]
+        );
+    }
+
+    #[test]
+    fn learns_inner_capitals_but_not_sentence_starts() {
+        assert_eq!(
+            corrected_words("open github now", "open GitHub now"),
+            vec!["GitHub"]
+        );
+        assert!(corrected_words("the cat sat down", "The cat sat down").is_empty());
+    }
+
+    #[test]
+    fn ignores_ordinary_word_fixes() {
+        assert!(corrected_words("their going home now", "they're going home now").is_empty());
+    }
+
+    #[test]
+    fn learns_nothing_when_focus_moved_elsewhere() {
+        assert!(corrected_words("send the report to Priya", "Inbox (3) Search mail").is_empty());
+    }
+}
