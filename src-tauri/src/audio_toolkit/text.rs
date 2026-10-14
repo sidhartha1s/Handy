@@ -482,7 +482,7 @@ pub fn normalize_transcription_output(text: &str) -> String {
 /// false hit only costs one cleanup call, a miss pastes an uncorrected sentence.
 static CLEANUP_CUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)\b(no|nope|oops|actually|i meant?|scratch that|strike that|delete that|never ?mind|instead|wait|sorry|rather|make it|correction|period|full stop|comma|colon|semicolon|question mark|exclamation (mark|point)|new line|new paragraph|um+|uh+|erm)\b",
+        r"(?i)\b(no|nope|oops|actually|i meant?|scratch that|strike that|delete that|never ?mind|instead|wait|sorry|rather|make it|correction|period|full stop|comma|colon|semicolon|question mark|exclamation (mark|point)|new line|new paragraph|um+|uh+|erm|you know|so yeah|like|sari)\b",
     )
     .unwrap()
 });
