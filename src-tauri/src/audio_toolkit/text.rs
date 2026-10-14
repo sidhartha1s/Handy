@@ -112,7 +112,11 @@ fn find_best_match<'a>(
 
         // Soundex is an English/ASCII phonetic algorithm. Numeric terms can
         // still use edit distance, but must not receive a phonetic boost.
-        let phonetic_match = supports_soundex(candidate)
+        // Soundex keeps only the first four sounds, so long strings that share
+        // them can still differ in most letters ("and roast" vs "Anthropic":
+        // 5 of 9). The boost applies only when at most half the letters differ.
+        let phonetic_match = levenshtein_score <= 0.5
+            && supports_soundex(candidate)
             && supports_soundex(&custom_word_key.key)
             && soundex(candidate, &custom_word_key.key);
 
