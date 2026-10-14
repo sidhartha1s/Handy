@@ -691,9 +691,11 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
-                            // Clean transcripts skip the LLM cleanup and paste straight away.
+                            // With the lean cleanup prompt, clean transcripts skip the LLM and
+                            // paste straight away. Other prompts (translate, tone) always run.
                             let post_process = post_process
-                                && crate::audio_toolkit::needs_llm_cleanup(&transcription);
+                                && (!crate::settings::uses_lean_cleanup_prompt(&get_settings(&ah))
+                                    || crate::audio_toolkit::needs_llm_cleanup(&transcription));
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
