@@ -106,7 +106,10 @@ mod tests {
     #[test]
     fn learns_a_corrected_name() {
         assert_eq!(
-            corrected_words("Ask cubanetes about the deploy.", "Ask Kubernetes about the deploy."),
+            corrected_words(
+                "Ask cubanetes about the deploy.",
+                "Ask Kubernetes about the deploy."
+            ),
             vec!["Kubernetes"]
         );
     }
