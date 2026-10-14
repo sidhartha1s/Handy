@@ -93,11 +93,14 @@ pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
         .copied()
         .filter(|n| !pasted_tokens.contains(n))
         .collect();
+    let starts = sentence_starts(now);
     let mut learned: Vec<String> = Vec::new();
     for missing in pasted_tokens.iter().filter(|p| !now_tokens.contains(p)) {
         let best = new_tokens
             .iter()
-            .filter(|n| n.chars().count() >= 3 && looks_like_a_name(missing, n))
+            .filter(|n| {
+                n.chars().count() >= 3 && looks_like_a_name(missing, n, starts.contains(n))
+            })
             .map(|n| {
                 let score =
                     strsim::normalized_levenshtein(&missing.to_lowercase(), &n.to_lowercase());
@@ -114,13 +117,37 @@ pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
     learned
 }
 
-fn looks_like_a_name(pasted: &str, fixed: &str) -> bool {
-    let has_digit = fixed.chars().any(|c| c.is_ascii_digit());
-    if pasted.eq_ignore_ascii_case(fixed) {
-        has_digit || fixed.chars().skip(1).any(char::is_uppercase)
+/// A capital first letter means nothing when the word starts a sentence or a
+/// line: "The" and "Now" there are grammar, not names.
+fn looks_like_a_name(pasted: &str, fixed: &str, starts_sentence: bool) -> bool {
+    let marked = fixed.chars().any(|c| c.is_ascii_digit())
+        || fixed.chars().skip(1).any(char::is_uppercase);
+    if pasted.eq_ignore_ascii_case(fixed) || starts_sentence {
+        marked
     } else {
-        has_digit || fixed.chars().any(char::is_uppercase)
+        marked || fixed.chars().any(char::is_uppercase)
     }
+}
+
+/// Words that open a line or follow a full stop, question or exclamation mark.
+fn sentence_starts(text: &str) -> Vec<&str> {
+    let mut starts = Vec::new();
+    for line in text.lines() {
+        let mut at_start = true;
+        for raw in line.split_whitespace().flat_map(split_sentences) {
+            let word = raw.trim_matches(|c: char| !c.is_alphanumeric());
+            if word.is_empty() {
+                continue;
+            }
+            if at_start {
+                starts.push(word);
+            }
+            at_start = raw
+                .trim_end_matches(['"', ''', ')'])
+                .ends_with(['.', '!', '?']);
+        }
+    }
+    starts
 }
 
 #[cfg(test)]
@@ -164,6 +191,22 @@ mod tests {
         assert_eq!(
             corrected_words("build the aspnet app", "build the ASP.NET app"),
             vec!["ASP.NET"]
+        );
+    }
+
+    #[test]
+    fn sentence_starts_typed_after_a_paste_are_not_names() {
+        // Seen on the owner's laptop: after a paste into a chat box and more
+        // typing, the word list gained "The" (from "they") and "Now" (from "know").
+        assert!(corrected_words(
+            "not a bite more and they know it",
+            "not a byte more and it is fine. The rest is new.
+Now I test it"
+        )
+        .is_empty());
+        assert_eq!(
+            corrected_words("ship it. kubernetes is up", "ship it. Kubernetes7 is up"),
+            vec!["Kubernetes7"]
         );
     }
 
