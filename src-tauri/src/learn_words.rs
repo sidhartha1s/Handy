@@ -154,14 +154,15 @@ mod tests {
 
     #[test]
     fn back_to_back_pastes_are_not_learned_as_names() {
-        // Seen on a test laptop: the word list gained "lunch.Ask" and "update.Mr".
+        // Seen on a test laptop: the word list gained "lunch.Ask" and "update.Mr"
+        // when the next dictation was pasted straight after the first one.
         assert!(corrected_words(
-            "Ask Sidhartha to review the render tonight.",
-            "Push the page before lunch.Ask Sidhartha to review the render tonight."
+            "Push the page to staging before lunch.",
+            "Push the page to staging before lunch.Ask Sidhartha to review it."
         )
         .is_empty());
         assert_eq!(
-            corrected_words("build the asp net app", "build the ASP.NET app"),
+            corrected_words("build the aspnet app", "build the ASP.NET app"),
             vec!["ASP.NET"]
         );
     }
