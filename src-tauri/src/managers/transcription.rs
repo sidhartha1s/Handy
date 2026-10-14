@@ -273,6 +273,9 @@ pub struct TranscriptionManager {
     /// yet. This prevents a second worker from starting after finalize/cancel
     /// closes the router but before the first worker has fully exited.
     active_stream_worker: Arc<AtomicU64>,
+    /// Names and jargon read from the screen when the current recording
+    /// started; merged into the custom words for that one transcription.
+    context_words: Arc<Mutex<Vec<String>>>,
 }
 
 impl TranscriptionManager {
@@ -293,6 +296,7 @@ impl TranscriptionManager {
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
+            context_words: Arc::new(Mutex::new(Vec::new())),
         };
 
         // Start the idle watcher
@@ -1085,7 +1089,7 @@ impl TranscriptionManager {
             Ok(Err(e)) => return Err(e.into()),
         };
 
-        let settings = get_settings(&self.app_handle);
+        let settings = self.settings_with_context_words();
         // Streaming models do not receive a decode prompt, so custom words
         // always go through the shared fuzzy post-correction path.
         let filtered = post_process_transcription_text(
@@ -1125,6 +1129,23 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
+    /// Replaces the context words for the next transcription.
+    pub fn set_context_words(&self, words: Vec<String>) {
+        *self.context_words.lock().unwrap() = words;
+    }
+
+    /// Current settings with this dictation's context words appended to the
+    /// custom words. The words are used once and cleared.
+    fn settings_with_context_words(&self) -> AppSettings {
+        let mut settings = get_settings(&self.app_handle);
+        for word in std::mem::take(&mut *self.context_words.lock().unwrap()) {
+            if !settings.custom_words.iter().any(|w| w.eq_ignore_ascii_case(&word)) {
+                settings.custom_words.push(word);
+            }
+        }
+        settings
+    }
+
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
@@ -1161,7 +1182,7 @@ impl TranscriptionManager {
         }
 
         // Get current settings for configuration
-        let settings = get_settings(&self.app_handle);
+        let settings = self.settings_with_context_words();
 
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.
