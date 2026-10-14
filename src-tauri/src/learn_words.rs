@@ -143,7 +143,7 @@ fn sentence_starts(text: &str) -> Vec<&str> {
                 starts.push(word);
             }
             at_start = raw
-                .trim_end_matches(['"', '\'', ')'])
+                .trim_end_matches(['"', '\'', ')', '\u{201D}', '\u{2019}'])
                 .ends_with(['.', '!', '?']);
         }
     }
