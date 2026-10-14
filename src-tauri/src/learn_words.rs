@@ -200,8 +200,7 @@ mod tests {
         // typing, the word list gained "The" (from "they") and "Now" (from "know").
         assert!(corrected_words(
             "not a bite more and they know it",
-            "not a byte more and it is fine. The rest is new.
-Now I test it"
+            "not a byte more and it is fine. The rest is new.\nNow I test it"
         )
         .is_empty());
         assert_eq!(
