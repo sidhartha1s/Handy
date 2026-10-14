@@ -54,7 +54,10 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
 /// limit, so cuts land in pauses between words rather than inside them.
 pub fn quiet_cut_points(samples: &[f32], max_len: usize, search_len: usize) -> Vec<usize> {
     const FRAME: usize = 480;
-    debug_assert!(max_len > FRAME, "pieces must be longer than one 30 ms frame");
+    debug_assert!(
+        max_len > FRAME,
+        "pieces must be longer than one 30 ms frame"
+    );
     let mut cuts = Vec::new();
     let mut start = 0;
     while samples.len() - start > max_len {
@@ -86,7 +89,10 @@ mod tests {
         let cuts = quiet_cut_points(&samples, 20 * 16_000, 5 * 16_000);
         assert_eq!(cuts.len(), 2);
         for (cut, gap) in cuts.iter().zip([17 * 16_000, 36 * 16_000]) {
-            assert!((gap..gap + 4_800).contains(cut), "cut {cut} missed the gap at {gap}");
+            assert!(
+                (gap..gap + 4_800).contains(cut),
+                "cut {cut} missed the gap at {gap}"
+            );
         }
         assert!(quiet_cut_points(&samples[..20 * 16_000], 20 * 16_000, 5 * 16_000).is_empty());
     }

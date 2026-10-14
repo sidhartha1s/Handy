@@ -1389,7 +1389,10 @@ impl TranscriptionManager {
         } else {
             let ends = cuts.into_iter().chain([audio.len()]);
             let starts = std::iter::once(0).chain(ends.clone());
-            starts.zip(ends).map(|(s, e)| audio[s..e].to_vec()).collect()
+            starts
+                .zip(ends)
+                .map(|(s, e)| audio[s..e].to_vec())
+                .collect()
         };
         let mut texts = Vec::new();
         let mut language = None;
