@@ -750,6 +750,7 @@ impl ShortcutAction for TranscribeAction {
                                     error!("Failed to save history entry: {}", err);
                                 }
                             }
+                            let history_ms = history_time.elapsed().as_millis();
 
                             if processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
