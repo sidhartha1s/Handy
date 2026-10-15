@@ -40,10 +40,11 @@ use transcribe_rs::{
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Longest audio Moonshine gets in one run (16 kHz samples), and how far before
-/// that limit to look for a pause to cut at.
+/// Longest audio Moonshine and Parakeet get in one run (16 kHz samples), and how
+/// far before that limit to look for a pause to cut at.
 const MOONSHINE_MAX_PIECE: usize = 20 * 16_000;
-const MOONSHINE_CUT_SEARCH: usize = 5 * 16_000;
+const PARAKEET_MAX_PIECE: usize = 30 * 16_000;
+const PIECE_CUT_SEARCH: usize = 5 * 16_000;
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
