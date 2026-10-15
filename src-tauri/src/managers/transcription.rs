@@ -1377,7 +1377,7 @@ impl TranscriptionManager {
                 texts.push(text);
             }
         }
-        // Chinese and Japanese (Moonshine zh/ja models) are written without spaces between words.
+        // Chinese and Japanese are written without spaces between words.
         let unspaced = |c: char| {
             ('\u{3000}'..='\u{9FFF}').contains(&c) || ('\u{FF00}'..='\u{FFEF}').contains(&c)
         };
