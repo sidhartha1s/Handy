@@ -60,8 +60,9 @@ impl ReasoningParams {
 }
 
 /// Pick the reasoning-disable request fields an endpoint understands.
-/// Unknown endpoints get the common OpenAI-style field; if they reject it,
-/// the request is retried without it (see `send_chat_completion_with_schema`).
+/// Other endpoints get the common OpenAI-style field (plus a chat-template flag
+/// for `custom`); if they reject them, the request is retried without any
+/// reasoning fields (see `send_chat_completion_with_schema`).
 fn reasoning_disable_params(provider: &PostProcessProvider) -> ReasoningParams {
     let base_url = provider.base_url.to_lowercase();
     if base_url.contains("api.deepseek.com") {
