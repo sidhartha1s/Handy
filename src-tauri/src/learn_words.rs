@@ -192,7 +192,12 @@ mod tests {
             "Push the page to staging before lunch.Ask Sidhartha to review it."
         )
         .is_empty());
-        for next in ["I think it is fine.", "I'm on it.", "OK to ship.", "2 bugs left."] {
+        for next in [
+            "I think it is fine.",
+            "I'm on it.",
+            "OK to ship.",
+            "2 bugs left.",
+        ] {
             let now = format!("Push the page to staging before lunch.{next}");
             assert!(
                 corrected_words("Push the page to staging before lunch.", &now).is_empty(),
