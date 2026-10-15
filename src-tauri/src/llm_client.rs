@@ -36,8 +36,8 @@ struct ReasoningConfig {
 }
 
 /// Request fields used to ask an endpoint to skip reasoning/thinking.
-/// Providers disagree on the field name and accepted values, so at most one of
-/// these is set per request (see `reasoning_disable_params`).
+/// Providers disagree on the field name and accepted values, so each request
+/// carries only the fields its provider understands (see `reasoning_disable_params`).
 #[derive(Debug, Serialize, Clone, Default, PartialEq)]
 struct ReasoningParams {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,11 +46,16 @@ struct ReasoningParams {
     reasoning: Option<ReasoningConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_template_kwargs: Option<Value>,
 }
 
 impl ReasoningParams {
     fn is_empty(&self) -> bool {
-        self.reasoning_effort.is_none() && self.reasoning.is_none() && self.thinking.is_none()
+        self.reasoning_effort.is_none()
+            && self.reasoning.is_none()
+            && self.thinking.is_none()
+            && self.chat_template_kwargs.is_none()
     }
 }
 
