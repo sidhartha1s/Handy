@@ -704,6 +704,7 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
+                            let cleanup_time = Instant::now();
                             // With the lean cleanup prompt, clean transcripts skip the LLM and
                             // paste straight away. Other prompts (translate, tone) always run.
                             let post_process = post_process
