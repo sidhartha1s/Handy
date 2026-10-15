@@ -4,9 +4,9 @@
 //! it right.
 
 use crate::context_words::read_focused_text;
-use crate::settings::{get_settings, write_settings};
+use crate::settings::{add_custom_words, get_settings, write_settings};
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 /// When to re-read the text box, counted from the paste.
 const CHECK_AFTER: [Duration; 2] = [Duration::from_secs(10), Duration::from_secs(30)];
