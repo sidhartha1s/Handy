@@ -97,4 +97,15 @@ mod tests {
         }
         assert!(quiet_cut_points(&samples[..20 * 16_000], 20 * 16_000, 5 * 16_000).is_empty());
     }
+
+    #[test]
+    fn last_piece_is_never_a_scrap() {
+        // 20.05 s with its only silence right at the 20 s limit: cutting there
+        // would leave a 0.05 s last piece.
+        let mut samples = vec![0.5f32; 20 * 16_000 + 800];
+        samples[20 * 16_000 - 960..20 * 16_000].fill(0.0);
+        let cuts = quiet_cut_points(&samples, 20 * 16_000, 5 * 16_000);
+        assert_eq!(cuts.len(), 1);
+        assert!(samples.len() - cuts[0] >= 16_000, "last piece {} samples", samples.len() - cuts[0]);
+    }
 }
