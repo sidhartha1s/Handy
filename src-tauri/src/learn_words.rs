@@ -102,7 +102,7 @@ pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
             .iter()
             .filter(|n| {
                 n.chars().count() >= 3
-                    && !glued(n)
+                    && !glued(**n)
                     && looks_like_a_name(missing, n, starts.contains(n))
             })
             .map(|n| {
