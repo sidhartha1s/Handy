@@ -1414,8 +1414,17 @@ impl TranscriptionManager {
                 texts.push(text);
             }
         }
+        // Chinese and Japanese (Moonshine zh/ja models) are written without spaces between words.
+        let unspaced = |c: char| ('\u{3000}'..='\u{9FFF}').contains(&c);
+        let mut text = String::new();
+        for piece in texts {
+            if text.chars().last().is_some_and(|c| !unspaced(c)) {
+                text.push(' ');
+            }
+            text.push_str(&piece);
+        }
         Ok(RunOutcome {
-            text: texts.join(" "),
+            text,
             languages,
             applied_language_hint,
             output_was_translated,
