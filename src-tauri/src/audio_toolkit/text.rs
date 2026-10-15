@@ -532,7 +532,10 @@ mod tests {
             restore_misheard_sorry("5 p.m., oh, sari, 6 p.m."),
             "5 p.m., oh, sorry, 6 p.m."
         );
-        assert_eq!(restore_misheard_sorry("Visit Safari Park."), "Visit Safari Park.");
+        assert_eq!(
+            restore_misheard_sorry("Visit Safari Park."),
+            "Visit Safari Park."
+        );
     }
 
     #[test]
