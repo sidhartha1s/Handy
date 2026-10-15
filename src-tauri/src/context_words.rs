@@ -123,9 +123,14 @@ mod windows_uia {
 pub fn distinctive_words(text: &str, limit: usize) -> Vec<String> {
     let mut words: Vec<String> = Vec::new();
     let mut sentence_start = true;
-    for raw in text.split_whitespace() {
+    // A new line starts a sentence too: dictations pasted one per line often end
+    // without a full stop, and "The" on the next line was taken for a name.
+    for (i, raw) in text
+        .lines()
+        .flat_map(|line| line.split_whitespace().enumerate())
+    {
         let token = raw.trim_matches(|c: char| !c.is_alphanumeric());
-        let starts_sentence = sentence_start;
+        let starts_sentence = sentence_start || i == 0;
         sentence_start = raw.ends_with(['.', '!', '?', ':']);
         if token.chars().count() < 3 || !token.chars().any(char::is_alphabetic) {
             continue;
