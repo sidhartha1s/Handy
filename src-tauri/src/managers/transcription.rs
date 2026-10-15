@@ -1076,7 +1076,6 @@ impl TranscriptionManager {
     /// cancelled. There is no timeout here: waiting behind a model load is a
     /// queue position, not a failure (#1841), and the engine bounds the
     /// finalize itself by the audio it still has to decode.
-    /// Finalizes the stream with `extra_words` added to the custom words.
     pub fn finalize_stream(&self) -> Result<Option<String>> {
         let Some(tx) = self.router.take() else {
             return Ok(None);
