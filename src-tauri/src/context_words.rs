@@ -137,7 +137,8 @@ pub fn distinctive_words(text: &str, limit: usize) -> Vec<String> {
     {
         let token = raw.trim_matches(|c: char| !c.is_alphanumeric());
         let starts_sentence = sentence_start || i == 0;
-        sentence_start = raw.ends_with(['.', '!', '?', ':']) || (starts_sentence && token.is_empty());
+        sentence_start =
+            raw.ends_with(['.', '!', '?', ':']) || (starts_sentence && token.is_empty());
         if token.chars().count() < 3 || !token.chars().any(char::is_alphabetic) {
             continue;
         }
