@@ -1088,6 +1088,21 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     settings
 }
 
+/// Adds each word not already in the custom words (ignoring case); returns how many were added.
+pub fn add_custom_words(settings: &mut AppSettings, words: &[String]) -> usize {
+    let before = settings.custom_words.len();
+    for word in words {
+        if !settings
+            .custom_words
+            .iter()
+            .any(|w| w.eq_ignore_ascii_case(word))
+        {
+            settings.custom_words.push(word.clone());
+        }
+    }
+    settings.custom_words.len() - before
+}
+
 pub fn get_settings(app: &AppHandle) -> AppSettings {
     let store = app
         .store(crate::portable::store_path(SETTINGS_STORE_PATH))
