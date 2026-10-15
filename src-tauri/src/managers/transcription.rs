@@ -2204,6 +2204,14 @@ mod tests {
     }
 
     #[test]
+    fn long_takes_are_cut_for_moonshine_and_parakeet_only() {
+        assert_eq!(max_piece("moonshine"), Some(MOONSHINE_MAX_PIECE));
+        assert_eq!(max_piece("moonshine_streaming"), Some(MOONSHINE_MAX_PIECE));
+        assert_eq!(max_piece("parakeet"), Some(PARAKEET_MAX_PIECE));
+        assert_eq!(max_piece("whisper"), None);
+    }
+
+    #[test]
     fn normal_hosts_preserve_every_transcribe_accelerator_setting() {
         for setting in [
             TranscribeAcceleratorSetting::Auto,
