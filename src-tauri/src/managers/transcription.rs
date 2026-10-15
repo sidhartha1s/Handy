@@ -1327,13 +1327,20 @@ impl TranscriptionManager {
 
         // Moonshine ends early on long takes: on a 96 s recording it returned
         // only the first ~45 s, while 20 s pieces gave back every word.
-        let cuts = if info.arch.starts_with("moonshine") {
-            quiet_cut_points(&audio, MOONSHINE_MAX_PIECE, MOONSHINE_CUT_SEARCH)
+        // Parakeet stops punctuating on long takes: a 204 s recording came back
+        // with 1 full stop in 475 words, 30 s pieces with 10.
+        let max_piece = if info.arch.starts_with("moonshine") {
+            Some(MOONSHINE_MAX_PIECE)
+        } else if info.arch == "parakeet" {
+            Some(PARAKEET_MAX_PIECE)
         } else {
-            Vec::new()
+            None
         };
+        let cuts = max_piece.map_or_else(Vec::new, |max| {
+            quiet_cut_points(&audio, max, PIECE_CUT_SEARCH)
+        });
         if !cuts.is_empty() {
-            debug!("Moonshine: transcribing {} pieces", cuts.len() + 1);
+            debug!("{}: transcribing {} pieces", info.arch, cuts.len() + 1);
         }
         // Without cuts the audio moves into the single run, uncopied, as before.
         let pieces: Vec<Vec<f32>> = if cuts.is_empty() {
