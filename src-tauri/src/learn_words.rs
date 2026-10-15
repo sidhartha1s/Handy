@@ -92,9 +92,19 @@ pub fn corrected_words(pasted: &str, now: &str) -> Vec<String> {
     let starts = sentence_starts(now);
     let mut learned: Vec<String> = Vec::new();
     for missing in pasted_tokens.iter().filter(|p| !now_tokens.contains(p)) {
+        // "lunch.I", "lunch.OK": the next dictation was pasted straight after
+        // "lunch." in a way split_sentences cannot tell from a name.
+        let glued = |n: &str| {
+            n.strip_prefix(*missing)
+                .is_some_and(|rest| rest.starts_with(['.', '!', '?']))
+        };
         let best = new_tokens
             .iter()
-            .filter(|n| n.chars().count() >= 3 && looks_like_a_name(missing, n, starts.contains(n)))
+            .filter(|n| {
+                n.chars().count() >= 3
+                    && !glued(n)
+                    && looks_like_a_name(missing, n, starts.contains(n))
+            })
             .map(|n| {
                 let score =
                     strsim::normalized_levenshtein(&missing.to_lowercase(), &n.to_lowercase());
