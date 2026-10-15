@@ -761,6 +761,7 @@ impl ShortcutAction for TranscribeAction {
                                 let final_text = processed.final_text;
                                 let rm_for_paste = Arc::clone(&rm);
                                 ah.run_on_main_thread(move || {
+                                    let main_wait_ms = paste_time.elapsed().as_millis();
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
                                         debug!("Transcription operation cancelled before paste");
                                         utils::hide_recording_overlay(&ah_clone);
