@@ -878,6 +878,11 @@ mod tests {
             ..Default::default()
         }
         .is_empty());
+        assert!(!ReasoningParams {
+            chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
+            ..Default::default()
+        }
+        .is_empty());
     }
 
     #[test]
