@@ -278,10 +278,6 @@ pub struct TranscriptionManager {
     /// yet. This prevents a second worker from starting after finalize/cancel
     /// closes the router but before the first worker has fully exited.
     active_stream_worker: Arc<AtomicU64>,
-    /// Names and jargon read from the screen when the current recording
-    /// started, tagged with that recording's capture number so a late read
-    /// from an earlier recording is dropped.
-    context_words: Arc<Mutex<(u64, Vec<String>)>>,
 }
 
 impl TranscriptionManager {
@@ -302,7 +298,6 @@ impl TranscriptionManager {
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
-            context_words: Arc::new(Mutex::new((0, Vec::new()))),
         };
 
         // Start the idle watcher
@@ -1082,7 +1077,7 @@ impl TranscriptionManager {
     /// queue position, not a failure (#1841), and the engine bounds the
     /// finalize itself by the audio it still has to decode.
     /// Finalizes the stream with `extra_words` added to the custom words.
-    pub fn finalize_stream(&self, extra_words: &[String]) -> Result<Option<String>> {
+    pub fn finalize_stream(&self) -> Result<Option<String>> {
         let Some(tx) = self.router.take() else {
             return Ok(None);
         };
@@ -1096,7 +1091,7 @@ impl TranscriptionManager {
             Ok(Err(e)) => return Err(e.into()),
         };
 
-        let settings = self.settings_with_words(extra_words);
+        let settings = get_settings(&self.app_handle);
         // Streaming models do not receive a decode prompt, so custom words
         // always go through the shared fuzzy post-correction path.
         let filtered = post_process_transcription_text(
@@ -1136,42 +1131,7 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
-    /// Starts a new context capture: clears old words and returns the
-    /// capture number the reader must hand back with its words.
-    pub fn begin_context_capture(&self) -> u64 {
-        let mut context = self.context_words.lock().unwrap();
-        context.0 += 1;
-        context.1.clear();
-        context.0
-    }
-
-    /// Stores context words, unless a newer capture has started since.
-    pub fn set_context_words(&self, capture: u64, words: Vec<String>) {
-        let mut context = self.context_words.lock().unwrap();
-        if context.0 == capture {
-            context.1 = words;
-        }
-    }
-
-    /// Hands out the current recording's context words once.
-    pub fn take_context_words(&self) -> Vec<String> {
-        std::mem::take(&mut self.context_words.lock().unwrap().1)
-    }
-
-    /// Current settings with extra words appended to the custom words, for one
-    /// transcription only; nothing is saved.
-    fn settings_with_words(&self, extra_words: &[String]) -> AppSettings {
-        let mut settings = get_settings(&self.app_handle);
-        crate::settings::add_custom_words(&mut settings, extra_words);
-        settings
-    }
-
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
-        self.transcribe_with_words(audio, &[])
-    }
-
-    /// Transcribes with `extra_words` added to the custom words for this call.
-    pub fn transcribe_with_words(&self, audio: Vec<f32>, extra_words: &[String]) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -1207,7 +1167,7 @@ impl TranscriptionManager {
         }
 
         // Get current settings for configuration
-        let settings = self.settings_with_words(extra_words);
+        let settings = get_settings(&self.app_handle);
 
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.

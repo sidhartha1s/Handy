@@ -396,7 +396,6 @@ impl ShortcutAction for TranscribeAction {
         // Load ASR model and VAD model in parallel
         let kickoff_started = Instant::now();
         tm.initiate_model_load();
-        crate::context_words::spawn_capture(Arc::clone(&tm));
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -647,16 +646,14 @@ impl ShortcutAction for TranscribeAction {
                     // running, finalize it and use its text (all audio was already
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
-                    // Taken once so the stream and the batch fallback share them.
-                    let context_words = tm.take_context_words();
-                    let transcription_result = match tm.finalize_stream(&context_words) {
+                    let transcription_result = match tm.finalize_stream() {
                         // A finalized stream with usable text wins. An empty result
                         // (no active stream, produced nothing, or the stream failed
                         // or its worker crashed) falls back to a full batch
                         // transcription of the same audio. A cancelled finalize is
                         // surfaced instead, so a cancel never starts a batch run.
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe_with_words(samples, &context_words),
+                        Ok(_) => tm.transcribe(samples),
                         Err(err) => Err(err),
                     };
                     let transcribe_ms = transcription_time.elapsed().as_millis();
@@ -769,7 +766,6 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    let pasted = final_text.clone();
                                     match utils::paste(final_text, ah_clone.clone()) {
                                         Ok(()) => {
                                             debug!(
@@ -790,10 +786,6 @@ impl ShortcutAction for TranscribeAction {
                                                     .as_millis()
                                                     .saturating_sub(main_wait_ms),
                                                 stop_time.elapsed().as_millis()
-                                            );
-                                            crate::learn_words::spawn_learn(
-                                                ah_clone.clone(),
-                                                pasted,
                                             );
                                         }
                                         Err(e) => {
