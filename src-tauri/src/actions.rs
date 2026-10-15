@@ -738,6 +738,7 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             // Save to history if WAV was saved
+                            let history_time = Instant::now();
                             if wav_saved {
                                 if let Err(err) = hm.save_entry(
                                     file_name,
