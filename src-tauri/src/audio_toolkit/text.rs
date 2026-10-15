@@ -508,7 +508,7 @@ pub fn needs_llm_cleanup(text: &str) -> bool {
 
 static SARI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bsari\b").unwrap());
 
-/// Writes "sari" back as "sorry" in the text sent to the cleanup model. The
+/// Writes "sari" back as "sorry" in the text sent to the post-process LLM. The
 /// speech model often hears "sorry" as "Sari", and the 3B cleanup model then
 /// keeps the wrong half of the correction: "The budget is 20,000 Sari 25,000
 /// rupees." came back as "The budget is 20,000 rupees.", the same sentence
