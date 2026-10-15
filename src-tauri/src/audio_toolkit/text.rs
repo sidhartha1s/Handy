@@ -878,8 +878,9 @@ mod tests {
         let custom_words = vec!["Anthropic".to_string(), "Tauri".to_string()];
         let result = apply_custom_words(text, &custom_words, 0.18);
         assert_eq!(result, text);
-        // A close phonetic match still corrects.
-        let result = apply_custom_words("ask Anthropik today", &custom_words, 0.18);
+        // A close phonetic match still corrects. "Andropic" is 0.22 apart by letters alone, over the
+        // 0.18 threshold, so only the Soundex boost (same code A536) can make this pass.
+        let result = apply_custom_words("ask Andropic today", &custom_words, 0.18);
         assert_eq!(result, "ask Anthropic today");
     }
 
