@@ -51,9 +51,11 @@ pub fn save_wav_file<P: AsRef<Path>>(file_path: P, samples: &[f32]) -> Result<()
 
 /// Where to cut `samples` so no piece is longer than `max_len`: each cut is the
 /// quietest 30 ms frame (16 kHz) in the last `search_len` samples before the
-/// limit, so cuts land in pauses between words rather than inside them.
+/// limit, so cuts land in pauses between words rather than inside them. A cut
+/// never leaves a last piece under 1 s: Moonshine can make up text on scraps.
 pub fn quiet_cut_points(samples: &[f32], max_len: usize, search_len: usize) -> Vec<usize> {
     const FRAME: usize = 480;
+    const MIN_LAST: usize = 16_000;
     debug_assert!(
         max_len > FRAME,
         "pieces must be longer than one 30 ms frame"
@@ -62,13 +64,12 @@ pub fn quiet_cut_points(samples: &[f32], max_len: usize, search_len: usize) -> V
     let mut start = 0;
     while samples.len() - start > max_len {
         let from = start + max_len - search_len.min(max_len);
-        let quietest = (from..start + max_len - FRAME)
+        let to = (start + max_len).min(samples.len().saturating_sub(MIN_LAST));
+        let quietest = (from..to.saturating_sub(FRAME))
             .step_by(FRAME)
-            .min_by(|&a, &b| {
-                let energy = |at: usize| samples[at..at + FRAME].iter().map(|s| s * s).sum::<f32>();
-                energy(a).total_cmp(&energy(b))
-            })
-            .unwrap_or(from);
+            .map(|at| (samples[at..at + FRAME].iter().map(|s| s * s).sum::<f32>(), at))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map_or(from, |(_, at)| at);
         start = quietest + FRAME / 2;
         cuts.push(start);
     }
