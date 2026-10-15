@@ -172,13 +172,12 @@ mod tests {
 
     #[test]
     fn line_starts_are_sentence_starts() {
-        // Seen in the ASUS paste test: Notepad held "...open Handy" then "The Parakeet
-        // model..." on the next line, "The" became a context word, and every "the" in
-        // the next 4 dictations was pasted as "The".
-        let text = "Upload the photos and then open Handy\nThe Parakeet model beat Whisper";
+        // In the ASUS paste test of 15 Oct 26, every "the" in 4 dictations in a row
+        // was pasted as "The": a capitalised "The" in the word list does exactly that.
+        let text = "Upload the photos and then open Handy\nThe Parakeet model beat Whisper\n• The Raintree pages\n- The end";
         assert_eq!(
             distinctive_words(text, 20),
-            vec!["Handy", "Parakeet", "Whisper"]
+            vec!["Handy", "Parakeet", "Whisper", "Raintree"]
         );
     }
 
