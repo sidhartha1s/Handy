@@ -528,7 +528,10 @@ mod tests {
             restore_misheard_sorry("The budget is 20,000 Sari 25,000 rupees."),
             "The budget is 20,000 sorry 25,000 rupees."
         );
-        assert_eq!(restore_misheard_sorry("5 p.m., oh, sari, 6 p.m."), "5 p.m., oh, sorry, 6 p.m.");
+        assert_eq!(
+            restore_misheard_sorry("5 p.m., oh, sari, 6 p.m."),
+            "5 p.m., oh, sorry, 6 p.m."
+        );
         assert_eq!(restore_misheard_sorry("Visit Safari Park."), "Visit Safari Park.");
     }
 
