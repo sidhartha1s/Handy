@@ -23,7 +23,7 @@ pub fn spawn_capture(tm: Arc<TranscriptionManager>) {
     std::thread::spawn(move || {
         let text = read_screen_text();
         let words = distinctive_words(&text, MAX_CONTEXT_WORDS);
-        log::debug!("Context words from screen: {}", words.len());
+        log::debug!("Context words from screen: {} {:?}", words.len(), words);
         tm.set_context_words(capture, words);
     });
 }
