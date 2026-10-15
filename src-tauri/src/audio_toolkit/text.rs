@@ -506,9 +506,31 @@ pub fn needs_llm_cleanup(text: &str) -> bool {
             .any(|run| run.split_whitespace().count() > MAX_UNPUNCTUATED_WORDS)
 }
 
+static SARI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bsari\b").unwrap());
+
+/// Writes "sari" back as "sorry" in the text sent to the cleanup model. The
+/// speech model often hears "sorry" as "Sari", and the 3B cleanup model then
+/// keeps the wrong half of the correction: "The budget is 20,000 Sari 25,000
+/// rupees." came back as "The budget is 20,000 rupees.", the same sentence
+/// with "sorry" as "The budget is 25,000 rupees." Costs a real "sari"
+/// (the garment) in a dictation that goes through cleanup.
+pub fn restore_misheard_sorry(text: &str) -> String {
+    SARI_PATTERN.replace_all(text, "sorry").into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn misheard_sorry_is_restored_as_a_whole_word_only() {
+        assert_eq!(
+            restore_misheard_sorry("The budget is 20,000 Sari 25,000 rupees."),
+            "The budget is 20,000 sorry 25,000 rupees."
+        );
+        assert_eq!(restore_misheard_sorry("5 p.m., oh, sari, 6 p.m."), "5 p.m., oh, sorry, 6 p.m.");
+        assert_eq!(restore_misheard_sorry("Visit Safari Park."), "Visit Safari Park.");
+    }
 
     #[test]
     fn test_needs_llm_cleanup_on_self_corrections() {
