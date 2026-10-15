@@ -175,6 +175,18 @@ mod tests {
     }
 
     #[test]
+    fn line_starts_are_sentence_starts() {
+        // Seen in the ASUS paste test: Notepad held "...open Handy" then "The Parakeet
+        // model..." on the next line, "The" became a context word, and every "the" in
+        // the next 4 dictations was pasted as "The".
+        let text = "Upload the photos and then open Handy\nThe Parakeet model beat Whisper";
+        assert_eq!(
+            distinctive_words(text, 20),
+            vec!["Handy", "Parakeet", "Whisper"]
+        );
+    }
+
+    #[test]
     fn stops_at_the_limit() {
         let text = "x Alpha Bravo Charlie Delta";
         assert_eq!(distinctive_words(text, 2), vec!["Alpha", "Bravo"]);
