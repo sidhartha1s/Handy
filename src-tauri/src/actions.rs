@@ -684,6 +684,10 @@ impl ShortcutAction for TranscribeAction {
                             false
                         }
                     };
+                    let wav_wait_ms = transcription_time
+                        .elapsed()
+                        .as_millis()
+                        .saturating_sub(transcribe_ms);
 
                     if rm.was_cancelled_since(cancel_generation) {
                         debug!("Transcription operation cancelled before output handling");
