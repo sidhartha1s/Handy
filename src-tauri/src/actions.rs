@@ -659,6 +659,7 @@ impl ShortcutAction for TranscribeAction {
                         Ok(_) => tm.transcribe_with_words(samples, &context_words),
                         Err(err) => Err(err),
                     };
+                    let transcribe_ms = transcription_time.elapsed().as_millis();
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
