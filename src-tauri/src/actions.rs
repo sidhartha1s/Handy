@@ -716,6 +716,7 @@ impl ShortcutAction for TranscribeAction {
                                     show_processing_overlay(&ah);
                                 }
                             }
+                            let cleanup_time = Instant::now();
                             let Some(processed) = complete_unless_cancelled(
                                 process_transcription_output(&ah, &transcription, post_process),
                                 || rm.was_cancelled_since(cancel_generation),
