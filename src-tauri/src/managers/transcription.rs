@@ -1340,18 +1340,7 @@ impl TranscriptionManager {
             run_options.family.is_some()
         );
 
-        // Moonshine ends early on long takes: on a 96 s recording it returned
-        // only the first ~45 s, while 20 s pieces gave back every word.
-        // Parakeet stops punctuating on long takes: a 204 s recording came back
-        // with 1 full stop in 475 words, 30 s pieces with 10.
-        let max_piece = if info.arch.starts_with("moonshine") {
-            Some(MOONSHINE_MAX_PIECE)
-        } else if info.arch == "parakeet" {
-            Some(PARAKEET_MAX_PIECE)
-        } else {
-            None
-        };
-        let cuts = max_piece.map_or_else(Vec::new, |max| {
+        let cuts = max_piece(&info.arch).map_or_else(Vec::new, |max| {
             quiet_cut_points(&audio, max, PIECE_CUT_SEARCH)
         });
         if !cuts.is_empty() {
