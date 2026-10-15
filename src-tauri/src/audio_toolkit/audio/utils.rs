@@ -67,7 +67,12 @@ pub fn quiet_cut_points(samples: &[f32], max_len: usize, search_len: usize) -> V
         let to = (start + max_len).min(samples.len().saturating_sub(MIN_LAST));
         let quietest = (from..to.saturating_sub(FRAME))
             .step_by(FRAME)
-            .map(|at| (samples[at..at + FRAME].iter().map(|s| s * s).sum::<f32>(), at))
+            .map(|at| {
+                (
+                    samples[at..at + FRAME].iter().map(|s| s * s).sum::<f32>(),
+                    at,
+                )
+            })
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map_or(from, |(_, at)| at);
         start = quietest + FRAME / 2;
@@ -106,6 +111,10 @@ mod tests {
         samples[20 * 16_000 - 960..20 * 16_000].fill(0.0);
         let cuts = quiet_cut_points(&samples, 20 * 16_000, 5 * 16_000);
         assert_eq!(cuts.len(), 1);
-        assert!(samples.len() - cuts[0] >= 16_000, "last piece {} samples", samples.len() - cuts[0]);
+        assert!(
+            samples.len() - cuts[0] >= 16_000,
+            "last piece {} samples",
+            samples.len() - cuts[0]
+        );
     }
 }
