@@ -776,6 +776,21 @@ impl ShortcutAction for TranscribeAction {
                                                 "Text pasted successfully in {:?}",
                                                 paste_time.elapsed()
                                             );
+                                            info!(
+                                                "Dictation timing ms: samples {}, transcribe {}, wav wait {}, cleanup {} (llm {}), history {}, main thread wait {}, paste {}, total from key release {}",
+                                                samples_ms,
+                                                transcribe_ms,
+                                                wav_wait_ms,
+                                                cleanup_ms,
+                                                post_process,
+                                                history_ms,
+                                                main_wait_ms,
+                                                paste_time
+                                                    .elapsed()
+                                                    .as_millis()
+                                                    .saturating_sub(main_wait_ms),
+                                                stop_time.elapsed().as_millis()
+                                            );
                                             crate::learn_words::spawn_learn(
                                                 ah_clone.clone(),
                                                 pasted,
