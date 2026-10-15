@@ -46,6 +46,21 @@ const MOONSHINE_MAX_PIECE: usize = 20 * 16_000;
 const PARAKEET_MAX_PIECE: usize = 30 * 16_000;
 const PIECE_CUT_SEARCH: usize = 5 * 16_000;
 
+/// Moonshine ends early on long takes: on a 96 s recording it returned
+/// only the first ~45 s, while 20 s pieces gave back every word.
+/// Parakeet stops punctuating on long takes: a 204 s Parakeet Unified recording
+/// came back with 1 full stop in 475 words, 30 s pieces with 10. Nemotron
+/// Streaming shares the "parakeet" architecture and gets the same pieces.
+fn max_piece(arch: &str) -> Option<usize> {
+    if arch.starts_with("moonshine") {
+        Some(MOONSHINE_MAX_PIECE)
+    } else if arch == "parakeet" {
+        Some(PARAKEET_MAX_PIECE)
+    } else {
+        None
+    }
+}
+
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_string()
