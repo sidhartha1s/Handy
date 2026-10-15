@@ -123,6 +123,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         debug!("Post-processing skipped because the transcription is empty");
         return None;
     }
+    let transcription = &crate::audio_toolkit::restore_misheard_sorry(transcription);
 
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
