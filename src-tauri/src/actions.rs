@@ -614,6 +614,8 @@ impl ShortcutAction for TranscribeAction {
                     stop_recording_time.elapsed(),
                     samples.len()
                 );
+                // Stage times for the one-line timing summary logged after paste.
+                let samples_ms = stop_time.elapsed().as_millis();
 
                 if rm.was_cancelled_since(cancel_generation) {
                     debug!("Transcription operation cancelled after recording stop");
