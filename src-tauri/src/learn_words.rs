@@ -22,20 +22,16 @@ pub fn spawn_learn(app: AppHandle, pasted: String) {
             waited = at;
             let learned = corrected_words(&pasted, &read_focused_text());
             let mut settings = get_settings(&app);
-            let before = settings.custom_words.len();
-            for word in learned {
-                if !settings
-                    .custom_words
-                    .iter()
-                    .any(|w| w.eq_ignore_ascii_case(&word))
-                {
-                    settings.custom_words.push(word);
-                }
-            }
-            let added = settings.custom_words.len() - before;
+            let added = add_custom_words(&mut settings, &learned);
             if added > 0 {
                 log::info!("Learned {} word(s) from an edit", added);
                 write_settings(&app, settings);
+                // The settings page keeps its own copy of the list and saves it whole when a word is
+                // added by hand; without a refresh that save would delete the words learned here.
+                let _ = app.emit(
+                    "settings-changed",
+                    serde_json::json!({ "setting": "custom_words" }),
+                );
             }
         }
     });
