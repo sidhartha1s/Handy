@@ -820,15 +820,29 @@ mod tests {
         assert!(json.get("reasoning_effort").is_none());
         assert!(json.get("reasoning").is_none());
         assert!(json.get("thinking").is_none());
+        assert!(json.get("chat_template_kwargs").is_none());
     }
 
     #[test]
-    fn custom_provider_uses_top_level_reasoning_effort() {
-        let params = reasoning_disable_params(&provider("custom", "http://localhost:11434/v1"));
+    fn custom_provider_disables_thinking_in_chat_template() {
+        let params = reasoning_disable_params(&provider("custom", "http://127.0.0.1:8090/v1"));
         let json = request_json(params);
         assert_eq!(json["reasoning_effort"], "none");
+        assert_eq!(json["chat_template_kwargs"]["enable_thinking"], false);
         assert!(json.get("reasoning").is_none());
         assert!(json.get("thinking").is_none());
+    }
+
+    #[test]
+    fn hosted_providers_get_no_chat_template_kwargs() {
+        for p in [
+            provider("openai", "https://api.openai.com/v1"),
+            provider("openrouter", "https://openrouter.ai/api/v1"),
+            provider("custom", "https://api.deepseek.com"),
+        ] {
+            let json = request_json(reasoning_disable_params(&p));
+            assert!(json.get("chat_template_kwargs").is_none(), "{}", p.id);
+        }
     }
 
     #[test]
