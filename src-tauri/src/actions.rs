@@ -777,7 +777,7 @@ impl ShortcutAction for TranscribeAction {
                                                 paste_time.elapsed()
                                             );
                                             info!(
-                                                "Dictation timing ms: samples {}, transcribe {}, wav wait {}, cleanup {} (llm {}), history {}, main thread wait {}, paste {}, total from key release {}",
+                                                "Dictation timing ms: samples {}, transcribe {}, wav save+verify wait {}, cleanup {} (llm {}), history {}, main thread wait {}, paste {}, total since stop() {} (push-to-talk key-up adds a 50 ms grace before stop())",
                                                 samples_ms,
                                                 transcribe_ms,
                                                 wav_wait_ms,
