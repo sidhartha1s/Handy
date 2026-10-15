@@ -83,9 +83,11 @@ fn reasoning_disable_params(provider: &PostProcessProvider) -> ReasoningParams {
             ..Default::default()
         }
     } else if provider.id == "custom" {
-        // Local servers (llama.cpp, vLLM) render the model's chat template
-        // themselves; Qwen3-style templates only skip the think block when
-        // enable_thinking is false, which reasoning_effort does not set.
+        // Custom endpoints are usually local servers (llama.cpp, vLLM) that
+        // render the model's chat template; Qwen3-style templates only skip
+        // the think block when enable_thinking is false, which
+        // reasoning_effort does not set. A hosted endpoint that rejects the
+        // extra field falls back to a plain request via the 400/422 retry.
         ReasoningParams {
             reasoning_effort: Some("none".to_string()),
             chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
