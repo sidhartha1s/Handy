@@ -1162,15 +1162,7 @@ impl TranscriptionManager {
     /// transcription only; nothing is saved.
     fn settings_with_words(&self, extra_words: &[String]) -> AppSettings {
         let mut settings = get_settings(&self.app_handle);
-        for word in extra_words {
-            if !settings
-                .custom_words
-                .iter()
-                .any(|w| w.eq_ignore_ascii_case(word))
-            {
-                settings.custom_words.push(word.clone());
-            }
-        }
+        crate::settings::add_custom_words(&mut settings, extra_words);
         settings
     }
 
