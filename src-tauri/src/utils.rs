@@ -83,8 +83,8 @@ fn native_windows_machine() -> Option<u16> {
 
 /// Centralized cancellation function that can be called from anywhere in the app.
 /// Handles cancelling both recording and transcription operations and updates UI state.
-pub fn cancel_current_operation(app: &AppHandle) {
-    info!("Initiating operation cancellation...");
+pub fn cancel_current_operation(app: &AppHandle, source: &str) {
+    info!("Initiating operation cancellation (source: {source})...");
 
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);
