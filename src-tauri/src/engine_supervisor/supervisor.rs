@@ -1063,6 +1063,9 @@ struct Control {
     pid: u32,
     child: Mutex<Child>,
     stdin: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    /// Set when Handy kills the worker. On Windows that kill is `TerminateProcess(_, 1)`,
+    /// so the exit looks the same as the worker failing on its own.
+    killed_at: Mutex<Option<Instant>>,
 }
 
 impl Control {
@@ -1078,6 +1081,7 @@ impl Control {
     }
 
     fn kill(&self) {
+        lock(&self.killed_at).get_or_insert_with(Instant::now);
         let _ = lock(&self.child).kill();
     }
 }
@@ -1147,6 +1151,7 @@ impl Worker {
                 pid,
                 child: Mutex::new(child),
                 stdin: Mutex::new(Some(stdin_tx)),
+                killed_at: Mutex::new(None),
             }),
             responses,
             stderr_done,
@@ -1260,7 +1265,14 @@ impl Worker {
             }
         };
         let tail = self.native_tail();
-        if tail.is_empty() {
+        if let Some(at) = *lock(&self.control.killed_at) {
+            info!(
+                "Transcription worker (pid {}) stopped by Handy; exited {} ms after the kill: {}",
+                self.control.pid,
+                at.elapsed().as_millis(),
+                status
+            );
+        } else if tail.is_empty() {
             error!(
                 "Transcription worker (pid {}) died: {}",
                 self.control.pid, status

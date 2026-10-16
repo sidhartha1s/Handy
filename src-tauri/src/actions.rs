@@ -856,7 +856,7 @@ struct CancelAction;
 
 impl ShortcutAction for CancelAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        utils::cancel_current_operation(app);
+        utils::cancel_current_operation(app, "cancel shortcut");
     }
 
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
