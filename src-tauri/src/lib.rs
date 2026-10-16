@@ -185,6 +185,12 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     false
 }
 
+/// Only a model that is never unloaded is worth loading before it is asked for;
+/// any other timeout would unload it again before most first dictations.
+fn preload_model_at_startup(unload: settings::ModelUnloadTimeout, model: &str) -> bool {
+    unload == settings::ModelUnloadTimeout::Never && !model.is_empty()
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
@@ -216,6 +222,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
     app_handle.manage(tray::TrayState::new());
+
+    // Loading Parakeet took 34 s on a GTX 1650, and a load only started on the
+    // first key press, so the first dictation after every start waited for it.
+    let startup = settings::get_settings(app_handle);
+    if preload_model_at_startup(startup.model_unload_timeout, &startup.selected_model) {
+        transcription_manager.initiate_model_load();
+    }
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -420,6 +433,20 @@ mod headless_guard_tests {
     #[test]
     fn converts_worker_panics_to_runtime_failures() {
         assert_eq!(run_headless_guarded(|| panic!("simulated failure")), 1);
+    }
+}
+
+#[cfg(test)]
+mod preload_tests {
+    use super::preload_model_at_startup;
+    use crate::settings::ModelUnloadTimeout;
+
+    #[test]
+    fn preloads_only_a_selected_model_that_never_unloads() {
+        assert!(preload_model_at_startup(ModelUnloadTimeout::Never, "parakeet"));
+        assert!(!preload_model_at_startup(ModelUnloadTimeout::Never, ""));
+        assert!(!preload_model_at_startup(ModelUnloadTimeout::Min5, "parakeet"));
+        assert!(!preload_model_at_startup(ModelUnloadTimeout::Immediately, "parakeet"));
     }
 }
 
