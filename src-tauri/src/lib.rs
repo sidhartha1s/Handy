@@ -443,10 +443,19 @@ mod preload_tests {
 
     #[test]
     fn preloads_only_a_selected_model_that_never_unloads() {
-        assert!(preload_model_at_startup(ModelUnloadTimeout::Never, "parakeet"));
+        assert!(preload_model_at_startup(
+            ModelUnloadTimeout::Never,
+            "parakeet"
+        ));
         assert!(!preload_model_at_startup(ModelUnloadTimeout::Never, ""));
-        assert!(!preload_model_at_startup(ModelUnloadTimeout::Min5, "parakeet"));
-        assert!(!preload_model_at_startup(ModelUnloadTimeout::Immediately, "parakeet"));
+        assert!(!preload_model_at_startup(
+            ModelUnloadTimeout::Min5,
+            "parakeet"
+        ));
+        assert!(!preload_model_at_startup(
+            ModelUnloadTimeout::Immediately,
+            "parakeet"
+        ));
     }
 }
 
