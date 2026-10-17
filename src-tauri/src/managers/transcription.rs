@@ -1222,9 +1222,7 @@ impl TranscriptionManager {
                 Ok(None) => {
                     // Later segments are no use without this one: wait for
                     // finalize and report failure so the full batch runs.
-                    if let Some(reply) = drain_until_finalize_reply(&rx) {
-                        let _ = reply.send(Ok(None));
-                    }
+                    drain_until_finalize(rx);
                     return;
                 }
                 Err(e) => {
