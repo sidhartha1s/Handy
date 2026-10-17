@@ -1259,6 +1259,10 @@ impl TranscriptionManager {
                     texts.push(out.text.trim().to_string());
                     Ok(Some(()))
                 }
+                // A cancel must not fall through to Ok(None): actions.rs would then batch the whole take.
+                Err(e) if matches!(e.downcast_ref::<EngineError>(), Some(EngineError::Cancelled)) => {
+                    Err(EngineError::Cancelled)
+                }
                 Err(e) => {
                     error!("Backlog batch failed: {}", e);
                     Ok(None)
