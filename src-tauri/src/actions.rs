@@ -28,6 +28,8 @@ const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 /// Longest key-up wait the cleanup LLM may add. Past it the speech model's text is
 /// pasted as is: an uncleaned take beats a 7 s wait (3.5-7.6 s measured on long takes).
 const CLEANUP_DEADLINE: Duration = Duration::from_millis(1000);
+/// Cap for one cleanup call during speech, where nobody is waiting on it.
+const BACKGROUND_CLEANUP_DEADLINE: Duration = Duration::from_millis(5000);
 
 #[derive(Clone, serde::Serialize)]
 struct RecordingErrorEvent {
@@ -101,7 +103,7 @@ impl SegmentCleaner {
                 async move {
                     within_deadline(
                         post_process_transcription(&settings, &chunk),
-                        CLEANUP_DEADLINE,
+                        BACKGROUND_CLEANUP_DEADLINE,
                     )
                     .await
                 }
@@ -119,11 +121,18 @@ impl SegmentCleaner {
         self.stop.set();
     }
 
-    /// Waits for the call in flight (if any) and returns what was cleaned.
-    async fn finish(mut self) -> Cleaned {
+    /// Waits up to `wait` for the call in flight (if any) and returns what was
+    /// cleaned. A call still running then is dropped; its chunk joins the tail.
+    async fn finish(mut self, wait: Duration) -> Cleaned {
         self.stop.set();
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.await;
+        if let Some(mut handle) = self.handle.take() {
+            if tokio::time::timeout(wait, &mut handle).await.is_err() {
+                handle.abort();
+                warn!(
+                    "[FALLBACK] Background cleanup call still running {} ms after key-up; cleaning its sentences with the tail",
+                    wait.as_millis()
+                );
+            }
         }
         let cleaned = self.state.lock().unwrap().clone();
         cleaned
@@ -493,6 +502,7 @@ async fn clean_tail_only(
     app: &AppHandle,
     transcription: &str,
     background: Option<Cleaned>,
+    deadline: Duration,
     show_polishing: &(dyn Fn() + Sync),
 ) -> Option<ProcessedTranscription> {
     let bg = background?;
@@ -501,28 +511,27 @@ async fn clean_tail_only(
     let settings_ref = &settings;
     let tailed = segment_cleanup::finish_take(transcription, &bg, |tail| async move {
         show_polishing();
-        within_deadline(
-            post_process_transcription(settings_ref, &tail),
-            CLEANUP_DEADLINE,
-        )
-        .await
+        within_deadline(post_process_transcription(settings_ref, &tail), deadline).await
     })
     .await;
     let Some(tailed) = tailed else {
-        if bg.calls + bg.skipped > 0 {
+        if bg.calls + bg.failed + bg.skipped > 0 {
             warn!("[FALLBACK] Background cleanup discarded: the final transcript differs from the streamed text; cleaning the whole take");
         }
         return None;
     };
     info!(
-        "Background cleanup: {} calls during speech, {} skipped as clean, key-up cleanup {} ms on {} words",
-        bg.calls,
+        "Background cleanup: {} calls during speech ({} failed), {} skipped as clean, key-up cleanup {} ms on {} words",
+        bg.calls + bg.failed,
+        bg.failed,
         bg.skipped,
         started.elapsed().as_millis(),
         tailed.tail_words
     );
+    // Only text an LLM call actually returned counts as post-processed.
+    let cleaned = bg.calls > 0 || tailed.tail_cleaned;
     Some(ProcessedTranscription {
-        post_processed_text: Some(tailed.text.clone()),
+        post_processed_text: cleaned.then(|| tailed.text.clone()),
         final_text: tailed.text,
         post_process_prompt: selected_prompt_text(&settings),
     })
@@ -856,11 +865,6 @@ impl ShortcutAction for TranscribeAction {
                             );
 
                             let cleanup_time = Instant::now();
-                            // The call in flight at key-up finishes before the tail is cleaned.
-                            let background = match cleaner {
-                                Some(cleaner) => Some(cleaner.finish().await),
-                                None => None,
-                            };
                             let show_polishing = || {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
@@ -870,16 +874,26 @@ impl ShortcutAction for TranscribeAction {
                             };
                             let Some((processed, post_process)) = complete_unless_cancelled(
                                 async {
+                                    // One key-up budget: the call in flight gets up to all of
+                                    // it, the tail gets what is left.
+                                    let background = match cleaner {
+                                        Some(cleaner) => {
+                                            Some(cleaner.finish(CLEANUP_DEADLINE).await)
+                                        }
+                                        None => None,
+                                    };
                                     if post_process {
                                         if let Some(done) = clean_tail_only(
                                             &ah,
                                             &transcription,
                                             background,
+                                            CLEANUP_DEADLINE.saturating_sub(cleanup_time.elapsed()),
                                             &show_polishing,
                                         )
                                         .await
                                         {
-                                            return (done, true);
+                                            let cleaned = done.post_processed_text.is_some();
+                                            return (done, cleaned);
                                         }
                                     }
                                     // With the lean cleanup prompt, clean transcripts skip the LLM and

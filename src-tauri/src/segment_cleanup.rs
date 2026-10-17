@@ -3,10 +3,11 @@
 //! pure functions over strings plus a cleaner closure; `actions.rs` wires the
 //! real LLM call, the settings and the overlay.
 //!
-//! One sentence of look-back: the last complete sentence is never cleaned in
-//! the background, so a correction cue in it ("scratch that", "actually") can
-//! still reach the sentence before it. A cue spanning 2+ sentences across a
-//! boundary is a known limit.
+//! Look-back: the last complete sentence is never cleaned in the background,
+//! and a chunk never ends right before a sentence that opens with a
+//! correction cue ("Scratch that, Tuesday."), so the cue and the sentence it
+//! edits reach the LLM together. A cue reaching back 2+ sentences is a known
+//! limit.
 
 use log::warn;
 use std::future::Future;
@@ -25,8 +26,10 @@ pub struct Cleaned {
     pub text: String,
     /// The exact raw text those chunks came from (a prefix of the raw stream).
     pub covered_raw: String,
-    /// LLM calls made during speech.
+    /// LLM calls during speech that returned cleaned text.
     pub calls: usize,
+    /// LLM calls during speech that failed or timed out (chunk kept raw).
+    pub failed: usize,
     /// Chunks used as is because `needs_llm_cleanup` said they were clean.
     pub skipped: usize,
 }
@@ -68,13 +71,17 @@ fn complete_sentences(s: &str) -> Vec<(usize, usize)> {
 }
 
 /// The raw text after `covered_raw` that is safe to clean now: every complete
-/// sentence except the last complete one. `None` when `raw` no longer starts
-/// with `covered_raw` or fewer than two complete sentences are waiting.
+/// sentence except the last complete one, cut back further while the sentence
+/// after the cut opens with a correction. `None` when `raw` no longer starts
+/// with `covered_raw` or no safe cut exists yet.
 pub fn next_chunk<'a>(raw: &'a str, covered_raw: &str) -> Option<&'a str> {
     let rest = raw.strip_prefix(covered_raw)?;
     let sentences = complete_sentences(rest);
-    let keep_back = sentences.len().checked_sub(2)?;
-    Some(&rest[..sentences[keep_back].1])
+    let mut last = sentences.len().checked_sub(2)?;
+    while crate::audio_toolkit::opens_with_correction(&rest[sentences[last + 1].0..]) {
+        last = last.checked_sub(1)?;
+    }
+    Some(&rest[..sentences[last].1])
 }
 
 fn push_piece(out: &mut String, piece: &str) {
@@ -121,25 +128,25 @@ pub async fn run_background<C, Fut>(
         };
 
         let trimmed = chunk.trim();
-        let (text, called) = if crate::audio_toolkit::needs_llm_cleanup(trimmed) {
+        let (text, outcome) = if crate::audio_toolkit::needs_llm_cleanup(trimmed) {
             match clean(trimmed.to_string()).await {
-                Some(c) if !c.trim().is_empty() => (c, true),
+                Some(c) if !c.trim().is_empty() => (c, Some(true)),
                 _ => {
                     warn!("[FALLBACK] Background cleanup failed; keeping the raw sentence(s)");
-                    (trimmed.to_string(), true)
+                    (trimmed.to_string(), Some(false))
                 }
             }
         } else {
-            (trimmed.to_string(), false)
+            (trimmed.to_string(), None)
         };
 
         let mut st = state.lock().unwrap();
         push_piece(&mut st.text, &text);
         st.covered_raw.push_str(&chunk);
-        if called {
-            st.calls += 1;
-        } else {
-            st.skipped += 1;
+        match outcome {
+            Some(true) => st.calls += 1,
+            Some(false) => st.failed += 1,
+            None => st.skipped += 1,
         }
     }
 }
@@ -181,6 +188,8 @@ pub fn join_cleaned(prefix: &str, tail: &str) -> String {
 pub struct Tailed {
     pub text: String,
     pub tail_words: usize,
+    /// The tail went through the LLM and came back cleaned.
+    pub tail_cleaned: bool,
 }
 
 /// Key-up: clean only what the background left, then join. `None` means the
@@ -197,15 +206,14 @@ where
     };
     let cleaned_tail =
         if remaining.is_empty() || !crate::audio_toolkit::needs_llm_cleanup(remaining) {
-            remaining.to_string()
+            None
         } else {
-            clean(remaining.to_string())
-                .await
-                .unwrap_or_else(|| remaining.to_string())
+            clean(remaining.to_string()).await
         };
     Some(Tailed {
-        text: join_cleaned(prefix, &cleaned_tail),
+        text: join_cleaned(prefix, cleaned_tail.as_deref().unwrap_or(remaining)),
         tail_words: remaining.split_whitespace().count(),
+        tail_cleaned: cleaned_tail.is_some(),
     })
 }
 
@@ -224,10 +232,19 @@ mod tests {
 
     #[test]
     fn last_sentence_is_kept_back_for_a_correction_cue() {
-        // The cue sentence stays raw; only the sentence before it is cleaned.
+        // The cue edits the sentence before it, so both stay for key-up.
         assert_eq!(
             next_chunk("Send it Monday. Scratch that, Tuesday.", ""),
-            Some("Send it Monday.")
+            None
+        );
+        assert_eq!(
+            next_chunk("We meet today. Send it Monday. Scratch that, Tuesday.", ""),
+            Some("We meet today.")
+        );
+        // No cue: everything but the last sentence goes.
+        assert_eq!(
+            next_chunk("We meet today. Send it Monday. Then call me.", ""),
+            Some("We meet today. Send it Monday.")
         );
         // One complete sentence: nothing may be cleaned yet.
         assert_eq!(next_chunk("Scratch that, Tuesday.", ""), None);
@@ -290,16 +307,17 @@ mod tests {
     fn output_is_cleaned_prefix_then_cleaned_tail() {
         let b = bg("Send it Monday.", "Send it Monday.");
         let out = tauri::async_runtime::block_on(finish_take(
-            "Send it Monday. Scratch that, Tuesday.",
+            "Send it Monday. Then um call me.",
             &b,
             |rem| async move {
-                assert_eq!(rem, "Scratch that, Tuesday.");
-                Some("Send it Tuesday.".to_string())
+                assert_eq!(rem, "Then um call me.");
+                Some("Then call me.".to_string())
             },
         ))
         .unwrap();
-        assert_eq!(out.text, "Send it Monday. Send it Tuesday.");
-        assert_eq!(out.tail_words, 3);
+        assert_eq!(out.text, "Send it Monday. Then call me.");
+        assert_eq!(out.tail_words, 4);
+        assert!(out.tail_cleaned);
         assert_eq!(join_cleaned("A.", "B."), "A. B.");
         assert_eq!(join_cleaned("A.", ""), "A.");
     }
@@ -314,6 +332,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(failed.text, "Done. Scratch that, Friday.");
+        assert!(!failed.tail_cleaned);
         // A clean tail never reaches the LLM.
         let clean =
             tauri::async_runtime::block_on(finish_take("Done. All good here.", &b, |_| async {
@@ -321,6 +340,30 @@ mod tests {
             }))
             .unwrap();
         assert_eq!(clean.text, "Done. All good here.");
+        assert!(!clean.tail_cleaned);
+    }
+
+    #[test]
+    fn failed_background_calls_are_not_counted_as_cleaned() {
+        tauri::async_runtime::block_on(async {
+            let (tx, rx) = watch::channel(String::new());
+            let stop = Arc::new(Stop::default());
+            let state = Arc::new(Mutex::new(Cleaned::default()));
+            let task = tokio::spawn(run_background(
+                rx,
+                Arc::clone(&stop),
+                Arc::clone(&state),
+                || false,
+                |_| async { None },
+            ));
+            tx.send_replace("Um we ship. Then call me.".to_string());
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            stop.set();
+            task.await.unwrap();
+            let st = state.lock().unwrap();
+            assert_eq!((st.calls, st.failed, st.skipped), (0, 1, 0));
+            assert_eq!(st.text, "Um we ship.");
+        });
     }
 
     /// Drives `run_background` with a fake cleaner on a raw-text channel.

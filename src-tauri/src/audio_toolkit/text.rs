@@ -492,6 +492,20 @@ static CLEANUP_CUE_PATTERN: Lazy<Regex> = Lazy::new(|| {
     .unwrap()
 });
 
+/// A correction cue in the first three words of a sentence: such a sentence
+/// edits the one before it ("Send it Monday. Scratch that, Tuesday.").
+static CORRECTION_LEAD_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)^\W*(?:\w+\W+){0,2}?(no|nope|oops|actually|i meant?|scratch that|strike that|delete that|never ?mind|instead|wait|sorry|sari|rather|make it|correction)\b",
+    )
+    .unwrap()
+});
+
+/// Returns `true` when `sentence` opens with a correction of the sentence before it.
+pub fn opens_with_correction(sentence: &str) -> bool {
+    CORRECTION_LEAD_PATTERN.is_match(sentence)
+}
+
 /// Longest run of words without a full stop, question or exclamation mark that
 /// still counts as punctuated. The speech model sometimes returns a whole piece
 /// of a long take in lower case with no punctuation at all.
@@ -521,6 +535,15 @@ pub fn restore_misheard_sorry(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn correction_lead_is_found_only_near_the_start() {
+        assert!(opens_with_correction(" Scratch that, Tuesday."));
+        assert!(opens_with_correction("Oh sorry, Tuesday."));
+        assert!(opens_with_correction("I mean Tuesday."));
+        assert!(!opens_with_correction("Then call me."));
+        assert!(!opens_with_correction("We should not say no to that."));
+    }
 
     #[test]
     fn misheard_sorry_is_restored_as_a_whole_word_only() {
