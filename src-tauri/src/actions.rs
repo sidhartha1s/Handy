@@ -7,6 +7,7 @@ use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
+use crate::segment_cleanup::{self, Cleaned, Stop};
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
@@ -18,7 +19,7 @@ use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
@@ -59,6 +60,80 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    /// Background cleanup of the take being recorded, if one was started.
+    cleaner: Mutex<Option<SegmentCleaner>>,
+}
+
+impl TranscribeAction {
+    fn new(post_process: bool) -> Self {
+        Self {
+            post_process,
+            cleaner: Mutex::new(None),
+        }
+    }
+}
+
+/// Cleans each finished sentence while the user is still speaking; see
+/// `segment_cleanup`. Dropping it (cancel, early return) stops it for good.
+struct SegmentCleaner {
+    stop: Arc<Stop>,
+    state: Arc<Mutex<Cleaned>>,
+    handle: Option<tauri::async_runtime::JoinHandle<()>>,
+}
+
+impl SegmentCleaner {
+    fn start(
+        app: &AppHandle,
+        raw_rx: tokio::sync::watch::Receiver<String>,
+        cancel_generation: u64,
+    ) -> Self {
+        let stop = Arc::new(Stop::default());
+        let state = Arc::new(Mutex::new(Cleaned::default()));
+        let settings = get_settings(app);
+        let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        let handle = tauri::async_runtime::spawn(segment_cleanup::run_background(
+            raw_rx,
+            Arc::clone(&stop),
+            Arc::clone(&state),
+            move || rm.was_cancelled_since(cancel_generation),
+            move |chunk| {
+                let settings = settings.clone();
+                async move {
+                    within_deadline(
+                        post_process_transcription(&settings, &chunk),
+                        CLEANUP_DEADLINE,
+                    )
+                    .await
+                }
+            },
+        ));
+        Self {
+            stop,
+            state,
+            handle: Some(handle),
+        }
+    }
+
+    /// Key-up: no new background call starts from here on.
+    fn request_stop(&self) {
+        self.stop.set();
+    }
+
+    /// Waits for the call in flight (if any) and returns what was cleaned.
+    async fn finish(mut self) -> Cleaned {
+        self.stop.set();
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.await;
+        }
+        let cleaned = self.state.lock().unwrap().clone();
+        cleaned
+    }
+}
+
+impl Drop for SegmentCleaner {
+    fn drop(&mut self) {
+        self.stop.set();
+    }
 }
 
 /// Field name for structured output JSON schema
@@ -371,6 +446,15 @@ pub(crate) struct ProcessedTranscription {
     pub post_process_prompt: Option<String>,
 }
 
+fn selected_prompt_text(settings: &AppSettings) -> Option<String> {
+    let prompt_id = settings.post_process_selected_prompt_id.as_ref()?;
+    settings
+        .post_process_prompts
+        .iter()
+        .find(|prompt| &prompt.id == prompt_id)
+        .map(|prompt| prompt.prompt.clone())
+}
+
 pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
@@ -391,15 +475,7 @@ pub(crate) async fn process_transcription_output(
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
-            if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                if let Some(prompt) = settings
-                    .post_process_prompts
-                    .iter()
-                    .find(|prompt| &prompt.id == prompt_id)
-                {
-                    post_process_prompt = Some(prompt.prompt.clone());
-                }
-            }
+            post_process_prompt = selected_prompt_text(&settings);
         }
     }
 
@@ -408,6 +484,48 @@ pub(crate) async fn process_transcription_output(
         post_processed_text,
         post_process_prompt,
     }
+}
+
+/// Key-up with background work done: clean only the tail and join it to the
+/// already-cleaned sentences. `None` when there is no usable background work
+/// (the caller then cleans the whole text).
+async fn clean_tail_only(
+    app: &AppHandle,
+    transcription: &str,
+    background: Option<Cleaned>,
+    show_polishing: &(dyn Fn() + Sync),
+) -> Option<ProcessedTranscription> {
+    let bg = background?;
+    let settings = get_settings(app);
+    let started = Instant::now();
+    let settings_ref = &settings;
+    let tailed = segment_cleanup::finish_take(transcription, &bg, |tail| async move {
+        show_polishing();
+        within_deadline(
+            post_process_transcription(settings_ref, &tail),
+            CLEANUP_DEADLINE,
+        )
+        .await
+    })
+    .await;
+    let Some(tailed) = tailed else {
+        if bg.calls + bg.skipped > 0 {
+            warn!("[FALLBACK] Background cleanup discarded: the final transcript differs from the streamed text; cleaning the whole take");
+        }
+        return None;
+    };
+    info!(
+        "Background cleanup: {} calls during speech, {} skipped as clean, key-up cleanup {} ms on {} words",
+        bg.calls,
+        bg.skipped,
+        started.elapsed().as_millis(),
+        tailed.tail_words
+    );
+    Some(ProcessedTranscription {
+        post_processed_text: Some(tailed.text.clone()),
+        final_text: tailed.text,
+        post_process_prompt: selected_prompt_text(&settings),
+    })
 }
 
 impl ShortcutAction for TranscribeAction {
@@ -476,6 +594,10 @@ impl ShortcutAction for TranscribeAction {
         };
         if model_supports_streaming {
             tm.start_stream();
+            // Replacing an old cleaner drops it, which stops it.
+            *self.cleaner.lock().unwrap() = (self.post_process
+                && crate::settings::uses_lean_cleanup_prompt(&settings))
+            .then(|| SegmentCleaner::start(app, tm.raw_text_receiver(), rm.cancel_generation()));
         }
         let plan_elapsed = plan_started.elapsed();
 
@@ -564,6 +686,7 @@ impl ShortcutAction for TranscribeAction {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
             tm.cancel_stream();
+            self.cleaner.lock().unwrap().take();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
@@ -624,6 +747,11 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        let cleaner = self.cleaner.lock().unwrap().take();
+        // Key-up: no new background call from here on.
+        if let Some(cleaner) = &cleaner {
+            cleaner.request_stop();
+        }
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
@@ -728,20 +856,53 @@ impl ShortcutAction for TranscribeAction {
                             );
 
                             let cleanup_time = Instant::now();
-                            // With the lean cleanup prompt, clean transcripts skip the LLM and
-                            // paste straight away. Other prompts (translate, tone) always run.
-                            let post_process = post_process
-                                && (!crate::settings::uses_lean_cleanup_prompt(&get_settings(&ah))
-                                    || crate::audio_toolkit::needs_llm_cleanup(&transcription));
-                            if post_process {
+                            // The call in flight at key-up finishes before the tail is cleaned.
+                            let background = match cleaner {
+                                Some(cleaner) => Some(cleaner.finish().await),
+                                None => None,
+                            };
+                            let show_polishing = || {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
                                 } else {
                                     show_processing_overlay(&ah);
                                 }
-                            }
-                            let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                            };
+                            let Some((processed, post_process)) = complete_unless_cancelled(
+                                async {
+                                    if post_process {
+                                        if let Some(done) = clean_tail_only(
+                                            &ah,
+                                            &transcription,
+                                            background,
+                                            &show_polishing,
+                                        )
+                                        .await
+                                        {
+                                            return (done, true);
+                                        }
+                                    }
+                                    // With the lean cleanup prompt, clean transcripts skip the LLM and
+                                    // paste straight away. Other prompts (translate, tone) always run.
+                                    let post_process = post_process
+                                        && (!crate::settings::uses_lean_cleanup_prompt(
+                                            &get_settings(&ah),
+                                        ) || crate::audio_toolkit::needs_llm_cleanup(
+                                            &transcription,
+                                        ));
+                                    if post_process {
+                                        show_polishing();
+                                    }
+                                    (
+                                        process_transcription_output(
+                                            &ah,
+                                            &transcription,
+                                            post_process,
+                                        )
+                                        .await,
+                                        post_process,
+                                    )
+                                },
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -917,13 +1078,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     let mut map = HashMap::new();
     map.insert(
         "transcribe".to_string(),
-        Arc::new(TranscribeAction {
-            post_process: false,
-        }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction::new(false)) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction::new(true)) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

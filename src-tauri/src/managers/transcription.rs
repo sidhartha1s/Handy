@@ -362,6 +362,9 @@ pub struct TranscriptionManager {
     /// yet. This prevents a second worker from starting after finalize/cancel
     /// closes the router but before the first worker has fully exited.
     active_stream_worker: Arc<AtomicU64>,
+    /// Speech-model text of the current take so far, republished by the segment
+    /// worker after each finished segment. The background cleanup task reads it.
+    raw_text: Arc<tokio::sync::watch::Sender<String>>,
 }
 
 impl TranscriptionManager {
@@ -382,6 +385,7 @@ impl TranscriptionManager {
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
+            raw_text: Arc::new(tokio::sync::watch::channel(String::new()).0),
         };
 
         // Start the idle watcher
@@ -914,6 +918,12 @@ impl TranscriptionManager {
         self.stream_active.load(Ordering::Acquire)
     }
 
+    /// Receiver for the take's text so far (segment path only; stays empty
+    /// otherwise). Call after `start_stream`, which resets it.
+    pub fn raw_text_receiver(&self) -> tokio::sync::watch::Receiver<String> {
+        self.raw_text.subscribe()
+    }
+
     /// Shared handle to the stream router, used by the audio recorder to feed
     /// real-time frames without going through Tauri state on every frame.
     pub fn stream_router(&self) -> Arc<StreamRouter> {
@@ -946,6 +956,7 @@ impl TranscriptionManager {
         }
         let rx = self.router.open();
         self.stream_active.store(false, Ordering::Release);
+        self.raw_text.send_replace(String::new());
 
         let manager = self.clone();
         thread::spawn(move || manager.run_stream_worker(rx, worker_id));
@@ -1218,6 +1229,15 @@ impl TranscriptionManager {
                     let (shown, _) =
                         preview_script.convert(&join_pieces(texts.clone()), "", &run.languages);
                     emit_stream_text(&self.app_handle, &shown, "");
+                    // Same filter finalize applies, so the background cleanup
+                    // sees the text key-up will paste (it re-checks at key-up).
+                    self.raw_text.send_replace(post_process_transcription_text(
+                        join_pieces(texts.clone()),
+                        &settings,
+                        false,
+                        &run.output_language,
+                        &run.languages,
+                    ));
                 }
                 Ok(None) => {
                     // Later segments are no use without this one: wait for

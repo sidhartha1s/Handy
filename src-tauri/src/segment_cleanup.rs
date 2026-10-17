@@ -195,14 +195,14 @@ where
     let Plan::Tail { prefix, remaining } = plan(final_text, bg) else {
         return None;
     };
-    let cleaned_tail = if remaining.is_empty() || !crate::audio_toolkit::needs_llm_cleanup(remaining)
-    {
-        remaining.to_string()
-    } else {
-        clean(remaining.to_string())
-            .await
-            .unwrap_or_else(|| remaining.to_string())
-    };
+    let cleaned_tail =
+        if remaining.is_empty() || !crate::audio_toolkit::needs_llm_cleanup(remaining) {
+            remaining.to_string()
+        } else {
+            clean(remaining.to_string())
+                .await
+                .unwrap_or_else(|| remaining.to_string())
+        };
     Some(Tailed {
         text: join_cleaned(prefix, &cleaned_tail),
         tail_words: remaining.split_whitespace().count(),
@@ -234,10 +234,7 @@ mod tests {
         // A trailing unfinished fragment does not count as a later sentence.
         assert_eq!(next_chunk("Send it Monday. Scratch that", ""), None);
         // Three sentences: the first two go, the last stays.
-        assert_eq!(
-            next_chunk("One. Two! Three?", ""),
-            Some("One. Two!")
-        );
+        assert_eq!(next_chunk("One. Two! Three?", ""), Some("One. Two!"));
     }
 
     #[test]
@@ -250,7 +247,10 @@ mod tests {
 
     #[test]
     fn decimals_and_abbreviations_do_not_split() {
-        assert_eq!(next_chunk("It costs 3.5 rupees. Ok. Yes.", ""), Some("It costs 3.5 rupees. Ok."));
+        assert_eq!(
+            next_chunk("It costs 3.5 rupees. Ok. Yes.", ""),
+            Some("It costs 3.5 rupees. Ok.")
+        );
     }
 
     #[test]
@@ -315,21 +315,16 @@ mod tests {
         .unwrap();
         assert_eq!(failed.text, "Done. Scratch that, Friday.");
         // A clean tail never reaches the LLM.
-        let clean = tauri::async_runtime::block_on(finish_take(
-            "Done. All good here.",
-            &b,
-            |_| async { panic!("clean tail must not call the LLM") },
-        ))
-        .unwrap();
+        let clean =
+            tauri::async_runtime::block_on(finish_take("Done. All good here.", &b, |_| async {
+                panic!("clean tail must not call the LLM")
+            }))
+            .unwrap();
         assert_eq!(clean.text, "Done. All good here.");
     }
 
     /// Drives `run_background` with a fake cleaner on a raw-text channel.
-    fn run_fake(
-        raw: &'static str,
-        stop_before: bool,
-        calls: Arc<AtomicUsize>,
-    ) -> Cleaned {
+    fn run_fake(raw: &'static str, stop_before: bool, calls: Arc<AtomicUsize>) -> Cleaned {
         tauri::async_runtime::block_on(async move {
             let (tx, rx) = watch::channel(String::new());
             let stop = Arc::new(Stop::default());
@@ -377,7 +372,11 @@ mod tests {
     #[test]
     fn clean_sentences_skip_the_llm() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let out = run_fake("We ship today. The team agrees. Fine.", false, Arc::clone(&calls));
+        let out = run_fake(
+            "We ship today. The team agrees. Fine.",
+            false,
+            Arc::clone(&calls),
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(out.text, "We ship today. The team agrees.");
         assert_eq!((out.calls, out.skipped), (0, 1));
@@ -438,13 +437,19 @@ mod tests {
         tauri::async_runtime::block_on(async move {
             let (tx, rx) = watch::channel("A no wait. B no wait. C.".to_string());
             let state = Arc::new(Mutex::new(Cleaned::default()));
-            run_background(rx, Arc::new(Stop::default()), state, || true, move |_| {
-                let calls = Arc::clone(&calls_task);
-                async move {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    None
-                }
-            })
+            run_background(
+                rx,
+                Arc::new(Stop::default()),
+                state,
+                || true,
+                move |_| {
+                    let calls = Arc::clone(&calls_task);
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        None
+                    }
+                },
+            )
             .await;
             drop(tx);
         });
