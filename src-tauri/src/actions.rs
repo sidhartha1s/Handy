@@ -362,7 +362,22 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        let cleaned = match tokio::time::timeout(
+            CLEANUP_DEADLINE,
+            post_process_transcription(&settings, &final_text),
+        )
+        .await
+        {
+            Ok(cleaned) => cleaned,
+            Err(_) => {
+                warn!(
+                    "[FALLBACK] Cleanup took over {} ms; pasting the speech model's text",
+                    CLEANUP_DEADLINE.as_millis()
+                );
+                None
+            }
+        };
+        if let Some(processed_text) = cleaned {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
