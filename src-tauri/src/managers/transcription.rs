@@ -45,6 +45,62 @@ const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const MOONSHINE_MAX_PIECE: usize = 20 * 16_000;
 const PARAKEET_MAX_PIECE: usize = 30 * 16_000;
 const PIECE_CUT_SEARCH: usize = 5 * 16_000;
+/// Segment batching: a segment ends at a speech pause or after SEG_MAX. If more
+/// than BEHIND_LIMIT of audio is still untranscribed at key-up, one batch run
+/// over the remainder is faster than working through it segment by segment.
+const SEG_MAX: usize = 12 * 16_000;
+const SEG_CUT_SEARCH: usize = 4 * 16_000;
+const BEHIND_LIMIT: usize = 20 * 16_000;
+
+/// Collects live audio into segments for background batch transcription.
+#[derive(Default)]
+struct Segmenter {
+    buf: Vec<f32>,
+    ready: std::collections::VecDeque<Vec<f32>>,
+}
+
+impl Segmenter {
+    fn feed(&mut self, pcm: &[f32]) {
+        self.buf.extend_from_slice(pcm);
+        if self.buf.len() <= SEG_MAX {
+            return;
+        }
+        let mut rest = std::mem::take(&mut self.buf);
+        let mut start = 0;
+        for cut in quiet_cut_points(&rest, SEG_MAX, SEG_CUT_SEARCH) {
+            self.ready.push_back(rest[start..cut].to_vec());
+            start = cut;
+        }
+        self.buf = rest.split_off(start);
+    }
+
+    fn pause(&mut self) {
+        if !self.buf.is_empty() {
+            self.ready.push_back(std::mem::take(&mut self.buf));
+        }
+    }
+}
+
+/// Whether the audio left at key-up is too long to work through segment by
+/// segment (`queued` plus the `tail`, in samples).
+fn is_behind(queued: usize, tail: usize) -> bool {
+    queued + tail > BEHIND_LIMIT
+}
+
+/// Join transcribed pieces; Chinese and Japanese are written without spaces
+/// between words.
+fn join_pieces(pieces: impl IntoIterator<Item = String>) -> String {
+    let unspaced =
+        |c: char| ('\u{3000}'..='\u{9FFF}').contains(&c) || ('\u{FF00}'..='\u{FFEF}').contains(&c);
+    let mut text = String::new();
+    for piece in pieces {
+        if text.chars().last().is_some_and(|c| !unspaced(c)) {
+            text.push(' ');
+        }
+        text.push_str(&piece);
+    }
+    text
+}
 
 /// Moonshine ends early on long takes: on a 96 s recording it returned
 /// only the first ~45 s, while 20 s pieces gave back every word.
@@ -122,6 +178,8 @@ pub struct StreamPhaseEvent {
 /// is processed before finalize runs.
 enum StreamCmd {
     Feed(Vec<f32>),
+    /// Speech paused: the segment worker closes the segment being collected.
+    Pause,
     /// Flush the stream and reply with the final text, or `None` if no
     /// usable stream exists (caller should fall back to batch transcription).
     /// `Err(Cancelled)` if the finalize itself was cancelled.
@@ -192,6 +250,16 @@ impl StreamRouter {
         }
         if let Some(tx) = self.tx.lock().unwrap().as_ref() {
             let _ = tx.send(StreamCmd::Feed(frame.to_vec()));
+        }
+    }
+
+    /// Tell the worker speech paused. Same no-op cost as `feed` when closed.
+    pub fn pause(&self) {
+        if !self.open.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Some(tx) = self.tx.lock().unwrap().as_ref() {
+            let _ = tx.send(StreamCmd::Pause);
         }
     }
 
@@ -956,6 +1024,24 @@ impl TranscriptionManager {
             ..Default::default()
         };
 
+        // Parakeet re-encodes a long window per update live, which falls behind
+        // real time on weak GPUs: batch each finished segment once instead.
+        if info.arch == "parakeet" {
+            self.run_segment_worker(
+                rx,
+                info.clone(),
+                SegmentRun {
+                    model_id,
+                    effective_language,
+                    run_options,
+                    output_language,
+                    languages,
+                    chinese_script: settings.chinese_script,
+                },
+            );
+            return;
+        }
+
         // Feed results arrive on the engine's thread; this callback only
         // converts and emits preview text.
         let perf = Arc::new(Mutex::new(StreamPerf::new()));
@@ -1060,6 +1146,8 @@ impl TranscriptionManager {
                     let _ = reply.send(result);
                     return;
                 }
+                // Only the segment worker cares about pauses.
+                StreamCmd::Pause => {}
                 // Dropping the stream handle resets the worker's stream.
                 StreamCmd::Cancel => return,
             }
@@ -1067,6 +1155,150 @@ impl TranscriptionManager {
         // The channel closed without finalize/cancel; dropping the stream
         // handle resets the worker's stream. `_worker` drops after, clearing
         // this worker's flags.
+    }
+
+    /// Parakeet live path: transcribe each finished speech segment once, in
+    /// the background, so key-up only waits for the tail. Only this thread
+    /// submits engine calls, so one is in flight at a time.
+    fn run_segment_worker(&self, rx: mpsc::Receiver<StreamCmd>, info: LoadedInfo, run: SegmentRun) {
+        self.stream_active.store(true, Ordering::Release);
+        info!(
+            "Segment batching started (model '{}', backend '{}')",
+            run.model_id, info.backend
+        );
+        let settings = get_settings(&self.app_handle);
+        let mut preview_script = PreviewScript::new(run.chinese_script, &run.output_language);
+        let mut seg = Segmenter::default();
+        let mut texts: Vec<String> = Vec::new();
+        let mut detected: Option<String> = None;
+        // `Ok(None)`: the engine failed; the caller falls back to full batch.
+        let transcribe = |audio: Vec<f32>, detected: &mut Option<String>| {
+            self.touch_activity();
+            match self.engine.transcribe(audio, run.run_options.clone()) {
+                Ok(t) => {
+                    *detected = detected.take().or(t.language);
+                    Ok(Some(t.text.trim().to_string()))
+                }
+                Err(EngineError::Cancelled) => Err(EngineError::Cancelled),
+                Err(e) => {
+                    error!("Segment transcription failed: {}", e);
+                    self.forget_model_if_engine_dropped(&run.model_id, &e.to_string());
+                    Ok(None)
+                }
+            }
+        };
+
+        let reply = loop {
+            let mut ctl = None;
+            if seg.ready.is_empty() {
+                match rx.recv() {
+                    Ok(cmd) => ctl = segment_cmd(cmd, &mut seg),
+                    Err(_) => return,
+                }
+            }
+            while ctl.is_none() {
+                match rx.try_recv() {
+                    Ok(cmd) => ctl = segment_cmd(cmd, &mut seg),
+                    Err(_) => break,
+                }
+            }
+            match ctl {
+                Some(SegmentCtl::Cancel) => return,
+                Some(SegmentCtl::Finalize(reply)) => break reply,
+                None => {}
+            }
+            let Some(audio) = seg.ready.pop_front() else {
+                continue;
+            };
+            match transcribe(audio, &mut detected) {
+                Ok(Some(text)) => {
+                    if !text.is_empty() {
+                        texts.push(text);
+                    }
+                    let (shown, _) =
+                        preview_script.convert(&join_pieces(texts.clone()), "", &run.languages);
+                    emit_stream_text(&self.app_handle, &shown, "");
+                }
+                Ok(None) => {
+                    // Later segments are no use without this one: wait for
+                    // finalize and report failure so the full batch runs.
+                    match drain_until_finalize_reply(&rx) {
+                        Some(reply) => {
+                            let _ = reply.send(Ok(None));
+                        }
+                        None => {}
+                    }
+                    return;
+                }
+                Err(e) => {
+                    info!("Segment transcription stopped: {}", e);
+                    return;
+                }
+            }
+        };
+
+        let started = Instant::now();
+        let background = texts.len();
+        let tail = std::mem::take(&mut seg.buf);
+        let tail_ms = tail.len() / 16;
+        let queued: Vec<Vec<f32>> = seg.ready.drain(..).collect();
+        let backlog: usize = queued.iter().map(Vec::len).sum();
+        let finished = if is_behind(backlog, tail.len()) {
+            warn!(
+                "[FALLBACK] segment backlog {} segs {:.1}s, batching remainder",
+                queued.len() + 1,
+                (backlog + tail.len()) as f64 / 16_000.0
+            );
+            let rest: Vec<f32> = queued.into_iter().flatten().chain(tail).collect();
+            match self.transcribe_cpp(
+                info,
+                rest,
+                &settings,
+                &run.effective_language,
+                &run.model_id,
+            ) {
+                Ok(out) => {
+                    detected = detected.take().or(out.model_detected_language);
+                    texts.push(out.text.trim().to_string());
+                    Ok(Some(()))
+                }
+                Err(e) => {
+                    error!("Backlog batch failed: {}", e);
+                    Ok(None)
+                }
+            }
+        } else {
+            let mut outcome = Ok(Some(()));
+            for audio in queued.into_iter().chain([tail]) {
+                if audio.is_empty() {
+                    continue;
+                }
+                match transcribe(audio, &mut detected) {
+                    Ok(Some(text)) => texts.push(text),
+                    other => {
+                        outcome = other.map(|_| None);
+                        break;
+                    }
+                }
+            }
+            outcome
+        };
+        let result = finished.map(|done| {
+            done.map(|()| {
+                info!(
+                    "Segment batch: {} segments in background, tail {} ms audio, finalize {} ms",
+                    background,
+                    tail_ms,
+                    started.elapsed().as_millis()
+                );
+                FinalizedStreamText {
+                    text: join_pieces(texts.into_iter().filter(|t| !t.is_empty())),
+                    output_language: with_model_detected_language(run.output_language, detected),
+                    supported_languages: run.languages,
+                }
+            })
+        });
+        let _ = reply.send(result);
     }
 
     /// Return the taken ONNX engine to the mutex, unless the model was switched
@@ -1377,19 +1609,8 @@ impl TranscriptionManager {
                 texts.push(text);
             }
         }
-        // Chinese and Japanese are written without spaces between words.
-        let unspaced = |c: char| {
-            ('\u{3000}'..='\u{9FFF}').contains(&c) || ('\u{FF00}'..='\u{FFEF}').contains(&c)
-        };
-        let mut text = String::new();
-        for piece in texts {
-            if text.chars().last().is_some_and(|c| !unspaced(c)) {
-                text.push(' ');
-            }
-            text.push_str(&piece);
-        }
         Ok(RunOutcome {
-            text,
+            text: join_pieces(texts),
             languages,
             applied_language_hint,
             output_was_translated,
@@ -1982,6 +2203,47 @@ fn cpp_translation_task(
     }
 }
 
+/// What the segment worker needs from `run_stream_worker`'s setup.
+struct SegmentRun {
+    model_id: String,
+    effective_language: String,
+    run_options: RunOptions,
+    output_language: OutputLanguageEvidence,
+    languages: Vec<String>,
+    chinese_script: ChineseScript,
+}
+
+enum SegmentCtl {
+    Finalize(mpsc::Sender<StreamFinalizeReply>),
+    Cancel,
+}
+
+/// Apply one command to the segmenter; `Some` when the session is ending.
+fn segment_cmd(cmd: StreamCmd, seg: &mut Segmenter) -> Option<SegmentCtl> {
+    match cmd {
+        StreamCmd::Feed(pcm) => seg.feed(&pcm),
+        StreamCmd::Pause => seg.pause(),
+        StreamCmd::Finalize(reply) => return Some(SegmentCtl::Finalize(reply)),
+        StreamCmd::Cancel => return Some(SegmentCtl::Cancel),
+    }
+    None
+}
+
+/// Wait for the finalize request after the segment worker gave up; `None` if
+/// the session was cancelled or closed instead.
+fn drain_until_finalize_reply(
+    rx: &mpsc::Receiver<StreamCmd>,
+) -> Option<mpsc::Sender<StreamFinalizeReply>> {
+    while let Ok(cmd) = rx.recv() {
+        match cmd {
+            StreamCmd::Finalize(reply) => return Some(reply),
+            StreamCmd::Cancel => return None,
+            StreamCmd::Feed(_) | StreamCmd::Pause => {}
+        }
+    }
+    None
+}
+
 /// Drain a stream command channel, ignoring fed audio, until the caller
 /// finalizes or cancels. Used when streaming can't actually run (model not
 /// loaded / not streaming-capable) so the finalize handshake still completes
@@ -1989,7 +2251,7 @@ fn cpp_translation_task(
 fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            StreamCmd::Feed(_) => {}
+            StreamCmd::Feed(_) | StreamCmd::Pause => {}
             StreamCmd::Finalize(reply) => {
                 let _ = reply.send(Ok(None));
                 break;
@@ -2201,6 +2463,61 @@ mod tests {
 
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()
+    }
+
+    fn seconds(s: usize, amp: f32) -> Vec<f32> {
+        vec![amp; s * 16_000]
+    }
+
+    #[test]
+    fn pause_closes_the_segment_and_empty_pause_adds_nothing() {
+        let mut seg = Segmenter::default();
+        seg.pause();
+        assert!(seg.ready.is_empty());
+        seg.feed(&seconds(3, 0.5));
+        seg.pause();
+        seg.feed(&seconds(2, 0.5));
+        seg.pause();
+        seg.feed(&seconds(1, 0.5));
+        let lens: Vec<usize> = seg.ready.iter().map(Vec::len).collect();
+        assert_eq!(lens, vec![3 * 16_000, 2 * 16_000]);
+        assert_eq!(seg.buf.len(), 16_000);
+    }
+
+    #[test]
+    fn segment_over_cap_is_cut_in_a_pause_and_remainder_kept() {
+        let mut seg = Segmenter::default();
+        let mut audio = seconds(15, 0.5);
+        // Silent gap at 10 s, inside the 4 s search window before the 12 s cap.
+        audio[10 * 16_000..10 * 16_000 + 4_800].fill(0.0);
+        for chunk in audio.chunks(1_600) {
+            seg.feed(chunk);
+        }
+        assert_eq!(seg.ready.len(), 1);
+        let cut = seg.ready[0].len();
+        assert!(
+            (10 * 16_000..10 * 16_000 + 4_800).contains(&cut),
+            "cut {cut}"
+        );
+        assert!(cut <= SEG_MAX);
+        assert_eq!(cut + seg.buf.len(), 15 * 16_000, "no audio lost");
+    }
+
+    #[test]
+    fn backlog_over_twenty_seconds_takes_the_batch_fallback() {
+        assert!(!is_behind(10 * 16_000, 10 * 16_000));
+        assert!(is_behind(10 * 16_000, 10 * 16_000 + 1));
+        assert!(!is_behind(0, 0));
+    }
+
+    #[test]
+    fn pieces_join_with_spaces_except_between_cjk() {
+        let join = |p: &[&str]| join_pieces(p.iter().map(|s| (*s).to_string()));
+        assert_eq!(join(&["hello", "world"]), "hello world");
+        assert_eq!(join(&["你好", "世界"]), "你好世界");
+        assert_eq!(join(&["你好", "world"]), "你好world");
+        assert_eq!(join(&["hello", "世界"]), "hello 世界");
+        assert_eq!(join(&[]), "");
     }
 
     #[test]

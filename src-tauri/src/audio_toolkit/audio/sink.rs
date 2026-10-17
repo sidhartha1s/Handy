@@ -64,7 +64,9 @@ impl CaptureVad {
 /// Receives spectrum levels for the recording overlay.
 pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 /// Receives each 16 kHz mono frame that passes the recording's VAD policy, in
-/// order. Used to feed live streaming transcription as audio arrives.
+/// order. Used to feed live streaming transcription as audio arrives. An empty
+/// slice marks a pause in speech. An empty
+/// slice marks a pause in speech.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 
 /// What a finished recording hands back.
@@ -88,6 +90,9 @@ pub struct CaptureSink {
     /// counts; readiness is not speech.
     ready: Option<mpsc::Sender<()>>,
     samples: Vec<f32>,
+    /// Whether the last frame sent to `on_audio` was speech, so a pause is
+    /// announced once, on its first silent frame.
+    in_speech: bool,
 }
 
 /// Spectrum window at 16 kHz: 32 ms, near the overlay's ~30 Hz refresh.
@@ -123,6 +128,7 @@ impl CaptureSink {
             on_audio,
             ready: Some(ready),
             samples: Vec::new(),
+            in_speech: false,
         }
     }
 
@@ -187,8 +193,16 @@ impl Sink for CaptureSink {
             .push_frame(chunk.samples)
             .unwrap_or(VadFrame::Speech(chunk.samples))
         {
-            VadFrame::Speech(frame) => Self::emit(&mut self.samples, &self.on_audio, frame),
-            VadFrame::Noise => {}
+            VadFrame::Speech(frame) => {
+                self.in_speech = true;
+                Self::emit(&mut self.samples, &self.on_audio, frame);
+            }
+            // An empty frame tells the consumer speech paused (segment boundary).
+            VadFrame::Noise => {
+                if std::mem::take(&mut self.in_speech) {
+                    (self.on_audio)(&[]);
+                }
+            }
         }
     }
 }
