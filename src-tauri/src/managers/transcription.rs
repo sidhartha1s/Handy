@@ -1260,7 +1260,12 @@ impl TranscriptionManager {
                     Ok(Some(()))
                 }
                 // A cancel must not fall through to Ok(None): actions.rs would then batch the whole take.
-                Err(e) if matches!(e.downcast_ref::<EngineError>(), Some(EngineError::Cancelled)) => {
+                Err(e)
+                    if matches!(
+                        e.downcast_ref::<EngineError>(),
+                        Some(EngineError::Cancelled)
+                    ) =>
+                {
                     Err(EngineError::Cancelled)
                 }
                 Err(e) => {
