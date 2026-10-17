@@ -42,6 +42,7 @@ struct Harness {
     fed: Arc<Mutex<Vec<f32>>>,
     hangover: Arc<Mutex<Option<usize>>>,
     resets: Arc<Mutex<usize>>,
+    pauses: Arc<Mutex<usize>>,
 }
 
 fn harness(policy: VadPolicy) -> Harness {
@@ -52,9 +53,16 @@ fn harness(policy: VadPolicy) -> Harness {
     let hangover = Arc::clone(&vad.hangover);
     let resets = Arc::clone(&vad.resets);
     let fed = Arc::new(Mutex::new(Vec::new()));
+    let pauses = Arc::new(Mutex::new(0));
     let on_audio: AudioFrameCallback = {
         let fed = Arc::clone(&fed);
-        Arc::new(move |frame: &[f32]| fed.lock().unwrap().extend_from_slice(frame))
+        let pauses = Arc::clone(&pauses);
+        Arc::new(move |frame: &[f32]| {
+            if frame.is_empty() {
+                *pauses.lock().unwrap() += 1;
+            }
+            fed.lock().unwrap().extend_from_slice(frame)
+        })
     };
     let on_levels: LevelCallback = Arc::new(|_| {});
     let (ready_tx, ready) = mpsc::channel();
@@ -71,6 +79,7 @@ fn harness(policy: VadPolicy) -> Harness {
         fed,
         hangover,
         resets,
+        pauses,
     }
 }
 
@@ -130,6 +139,20 @@ fn vad_keeps_speech_frames_only() {
     let expected = [[1.0; FRAME], [2.0; FRAME]].concat();
     assert_eq!(*h.fed.lock().unwrap(), expected);
     assert_eq!(h.sink.finish().samples, expected);
+}
+
+#[test]
+fn first_silent_frame_after_speech_signals_one_pause() {
+    let mut h = harness(VadPolicy::Streaming);
+    h.sink.process_chunk(chunk(&[0.0; FRAME], FRAME));
+    assert_eq!(*h.pauses.lock().unwrap(), 0, "no speech yet, no pause");
+    h.sink.process_chunk(chunk(&[1.0; FRAME], FRAME));
+    h.sink.process_chunk(chunk(&[0.0; FRAME], FRAME));
+    h.sink.process_chunk(chunk(&[0.0; FRAME], FRAME));
+    assert_eq!(*h.pauses.lock().unwrap(), 1);
+    h.sink.process_chunk(chunk(&[1.0; FRAME], FRAME));
+    h.sink.process_chunk(chunk(&[0.0; FRAME], FRAME));
+    assert_eq!(*h.pauses.lock().unwrap(), 2);
 }
 
 #[test]

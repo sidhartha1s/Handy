@@ -496,7 +496,14 @@ impl AudioRecordingManager {
             let app_handle = app.clone();
             Arc::new(move |levels| utils::emit_levels(&app_handle, &levels))
         };
-        let on_audio: AudioFrameCallback = Arc::new(move |frame| stream_router.feed(frame));
+        let on_audio: AudioFrameCallback = Arc::new(move |frame| {
+            // An empty frame is the sink's pause marker.
+            if frame.is_empty() {
+                stream_router.pause();
+            } else {
+                stream_router.feed(frame);
+            }
+        });
 
         let manager = Self {
             state: Arc::new(Mutex::new(RecordingState::Idle)),
