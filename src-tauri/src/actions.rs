@@ -27,7 +27,7 @@ use tauri::{AppHandle, Emitter};
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 /// Longest key-up wait the cleanup LLM may add. Past it the speech model's text is
 /// pasted as is: an uncleaned take beats a 7 s wait (3.5-7.6 s measured on long takes).
-const CLEANUP_DEADLINE: Duration = Duration::from_millis(1000);
+pub(crate) const CLEANUP_DEADLINE: Duration = Duration::from_millis(1000);
 /// Cap for one cleanup call during speech, where nobody is waiting on it.
 const BACKGROUND_CLEANUP_DEADLINE: Duration = Duration::from_millis(5000);
 
@@ -468,6 +468,7 @@ pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
     post_process: bool,
+    deadline: Duration,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
@@ -475,11 +476,8 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        let cleaned = within_deadline(
-            post_process_transcription(&settings, &final_text),
-            CLEANUP_DEADLINE,
-        )
-        .await;
+        let cleaned =
+            within_deadline(post_process_transcription(&settings, &final_text), deadline).await;
         if let Some(processed_text) = cleaned {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
@@ -912,6 +910,7 @@ impl ShortcutAction for TranscribeAction {
                                             &ah,
                                             &transcription,
                                             post_process,
+                                            CLEANUP_DEADLINE.saturating_sub(cleanup_time.elapsed()),
                                         )
                                         .await,
                                         post_process,
