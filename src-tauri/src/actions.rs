@@ -25,7 +25,7 @@ use tauri::{AppHandle, Emitter};
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 /// Longest key-up wait the cleanup LLM may add. Past it the speech model's text is
-/// pasted as is: a slow uncleaned take beats a 7 s wait (3.5-7.6 s measured on long takes).
+/// pasted as is: an uncleaned take beats a 7 s wait (3.5-7.6 s measured on long takes).
 const CLEANUP_DEADLINE: Duration = Duration::from_millis(1000);
 
 #[derive(Clone, serde::Serialize)]
@@ -348,6 +348,23 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     }
 }
 
+/// Runs the cleanup, or gives up after `deadline` so the raw text is pasted instead.
+async fn within_deadline<F>(cleanup: F, deadline: Duration) -> Option<String>
+where
+    F: Future<Output = Option<String>>,
+{
+    match tokio::time::timeout(deadline, cleanup).await {
+        Ok(cleaned) => cleaned,
+        Err(_) => {
+            warn!(
+                "[FALLBACK] Cleanup took over {} ms; pasting the speech model's text",
+                deadline.as_millis()
+            );
+            None
+        }
+    }
+}
+
 pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
@@ -365,21 +382,11 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        let cleaned = match tokio::time::timeout(
-            CLEANUP_DEADLINE,
+        let cleaned = within_deadline(
             post_process_transcription(&settings, &final_text),
+            CLEANUP_DEADLINE,
         )
-        .await
-        {
-            Ok(cleaned) => cleaned,
-            Err(_) => {
-                warn!(
-                    "[FALLBACK] Cleanup took over {} ms; pasting the speech model's text",
-                    CLEANUP_DEADLINE.as_millis()
-                );
-                None
-            }
-        };
+        .await;
         if let Some(processed_text) = cleaned {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
@@ -933,7 +940,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 mod tests {
     use super::{
         complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        strip_think_block, within_deadline,
     };
     use crate::settings::OverlayStyle;
     use std::future;
@@ -941,6 +948,29 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn cleanup_inside_the_deadline_is_kept() {
+        let cleaned = tauri::async_runtime::block_on(within_deadline(
+            future::ready(Some("Cleaned.".to_string())),
+            Duration::from_millis(50),
+        ));
+        assert_eq!(cleaned.as_deref(), Some("Cleaned."));
+    }
+
+    #[test]
+    fn cleanup_past_the_deadline_falls_back_to_raw_text() {
+        let started = std::time::Instant::now();
+        let cleaned = tauri::async_runtime::block_on(within_deadline(
+            async {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                Some("too late".to_string())
+            },
+            Duration::from_millis(50),
+        ));
+        assert_eq!(cleaned, None);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 
     #[test]
     fn blank_transcription_is_detected() {
