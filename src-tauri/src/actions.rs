@@ -24,6 +24,9 @@ use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+/// Longest key-up wait the cleanup LLM may add. Past it the speech model's text is
+/// pasted as is: a slow uncleaned take beats a 7 s wait (3.5-7.6 s measured on long takes).
+const CLEANUP_DEADLINE: Duration = Duration::from_millis(1000);
 
 #[derive(Clone, serde::Serialize)]
 struct RecordingErrorEvent {
