@@ -65,7 +65,6 @@ impl CaptureVad {
 pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 /// Receives each 16 kHz mono frame that passes the recording's VAD policy, in
 /// order. Used to feed live streaming transcription as audio arrives. An empty
-/// slice marks a pause in speech. An empty
 /// slice marks a pause in speech.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 
