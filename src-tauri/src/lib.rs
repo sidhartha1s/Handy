@@ -19,6 +19,7 @@ mod overlay;
 mod paste_tx;
 pub mod portable;
 mod secure_input;
+mod segment_cleanup;
 mod settings;
 mod shortcut;
 mod signal_handle;
