@@ -2233,21 +2233,6 @@ fn segment_cmd(cmd: StreamCmd, seg: &mut Segmenter) -> Option<SegmentCtl> {
     None
 }
 
-/// Wait for the finalize request after the segment worker gave up; `None` if
-/// the session was cancelled or closed instead.
-fn drain_until_finalize_reply(
-    rx: &mpsc::Receiver<StreamCmd>,
-) -> Option<mpsc::Sender<StreamFinalizeReply>> {
-    while let Ok(cmd) = rx.recv() {
-        match cmd {
-            StreamCmd::Finalize(reply) => return Some(reply),
-            StreamCmd::Cancel => return None,
-            StreamCmd::Feed(_) | StreamCmd::Pause => {}
-        }
-    }
-    None
-}
-
 /// Drain a stream command channel, ignoring fed audio, until the caller
 /// finalizes or cancels. Used when streaming can't actually run (model not
 /// loaded / not streaming-capable) so the finalize handshake still completes
