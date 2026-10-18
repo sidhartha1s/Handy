@@ -1922,6 +1922,34 @@ mod tests {
         set_fault(None, false);
     }
 
+    /// A GPU failure that doesn't repeat: once the backoff runs out, the
+    /// idle CPU fallback moves back to the GPU by itself, with no reload or
+    /// settings change.
+    #[test]
+    #[ignore]
+    fn gpu_comes_back_by_itself_after_the_backoff() {
+        let pcm = test_pcm();
+        set_fault(Some("abort@run"), true);
+        let engine = EngineSupervisor::new(true);
+        lock(&engine.shared.gpu).first = Duration::from_secs(2);
+        assert!(engine.load(spec()).unwrap().on_gpu, "needs a GPU");
+        engine
+            .transcribe(pcm.clone(), RunOptions::default())
+            .unwrap();
+        assert!(engine.shared.gpu_unavailable());
+        assert!(!engine.loaded().unwrap().on_gpu);
+        set_fault(None, false);
+        let t = Instant::now();
+        while !engine.loaded().is_some_and(|info| info.on_gpu) {
+            assert!(t.elapsed() < Duration::from_secs(60), "still on CPU");
+            thread::sleep(Duration::from_millis(50));
+        }
+        println!("back on the GPU {:?} after the CPU fallback", t.elapsed());
+        engine.transcribe(pcm, RunOptions::default()).unwrap();
+        assert_eq!(lock(&engine.shared.gpu).failures, 0);
+        assert_eq!(worker_count(), 1);
+    }
+
     /// A GPU driver that crashes while its backend registers, before the
     /// hello: only a CPU-only worker survives it, so that is where the model
     /// loads. The GPU is marked unavailable, later loads stay CPU-only and devices
