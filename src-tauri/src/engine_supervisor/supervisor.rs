@@ -2026,7 +2026,10 @@ mod tests {
             assert!(t.elapsed() < Duration::from_secs(90), "never retried");
             thread::sleep(Duration::from_millis(50));
         }
-        println!("move back to the GPU gave up {:?} after the fallback", t.elapsed());
+        println!(
+            "move back to the GPU gave up {:?} after the fallback",
+            t.elapsed()
+        );
         assert!(t.elapsed() < Duration::from_secs(15 + 20 + 10));
         assert!(engine.shared.gpu_unavailable());
         let info = engine.loaded().expect("the model must stay loaded");
