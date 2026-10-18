@@ -742,6 +742,9 @@ impl Owner {
                 Err(mpsc::RecvTimeoutError::Disconnected) => return None,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     info!("Moving the transcription model back to the GPU");
+                    // A new failure sets it again; a model that loads on
+                    // CPU for another reason is then left alone.
+                    lock(&self.shared.gpu).retry_at = None;
                     self.worker = None;
                     if let Err(e) = self.ensure_worker() {
                         error!("Could not reload the transcription model: {}", e);
