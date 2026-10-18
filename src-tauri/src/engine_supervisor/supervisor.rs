@@ -353,7 +353,7 @@ impl Shared {
     /// A dictation finished on the GPU, so the next failure starts the
     /// backoff from the shortest wait again.
     fn gpu_worked(&self) {
-        lock(&self.gpu).failures = 0;
+        lock(&self.gpu).worked();
     }
 
     fn epoch(&self) -> u64 {
