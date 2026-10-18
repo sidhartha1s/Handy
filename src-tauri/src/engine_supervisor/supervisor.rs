@@ -860,7 +860,7 @@ impl Owner {
         let spec = self.spec.clone().ok_or_else(not_loaded)?;
         let started = Instant::now();
         let wanted = self.effective_spec(&spec);
-        let (worker, info) = match self.start_worker(&wanted) {
+        let (worker, info) = match self.start_worker(&wanted, START_DEADLINES) {
             Ok(started) => started,
             Err(failure)
                 if failure.worker_lost() && !self.cpu_only_worker(&wanted) && !wanted.pinned() =>
