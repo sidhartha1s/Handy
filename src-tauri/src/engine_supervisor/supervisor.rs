@@ -308,9 +308,14 @@ impl Shared {
 
     /// Start a worker and say hello, publishing its device list if it lists
     /// one.
-    fn hello(&self, cpu_only: bool, list_devices: bool) -> Result<Worker, Failure> {
+    fn hello(
+        &self,
+        cpu_only: bool,
+        list_devices: bool,
+        deadline: Duration,
+    ) -> Result<Worker, Failure> {
         let mut worker = Worker::spawn(cpu_only).map_err(Failure::Spawn)?;
-        match worker.call(&Request::Hello { list_devices }, None, HELLO_TIMEOUT)? {
+        match worker.call(&Request::Hello { list_devices }, None, deadline)? {
             Response::Hello { devices } => {
                 if let Some(devices) = devices {
                     self.set_devices(devices);
