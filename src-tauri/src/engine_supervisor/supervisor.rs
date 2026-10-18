@@ -486,10 +486,7 @@ impl EngineSupervisor {
         if gpu.blocks(Instant::now()) {
             info!("Transcription GPU no longer marked unavailable: {}", reason);
         }
-        *gpu = GpuBackoff {
-            first: gpu.first,
-            ..GpuBackoff::default()
-        };
+        gpu.reset();
     }
 
     /// The loaded model. A snapshot; never waits on the queue.
