@@ -145,6 +145,10 @@ impl GpuBackoff {
         self.retry_at = Some(now + wait);
         Some(wait)
     }
+
+    fn worked(&mut self) {
+        self.failures = 0;
+    }
 }
 
 fn ms_to_samples(ms: i64) -> usize {
