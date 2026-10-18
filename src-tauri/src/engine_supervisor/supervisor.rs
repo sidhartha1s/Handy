@@ -683,7 +683,7 @@ struct Owner {
 
 impl Owner {
     fn run(mut self, queue: mpsc::Receiver<Command>) {
-        while let Ok(command) = queue.recv() {
+        while let Some(command) = self.next_command(&queue) {
             match command {
                 Command::Load(spec, reply) => {
                     let _ = reply.send(self.load(spec));
