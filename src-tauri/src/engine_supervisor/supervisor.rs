@@ -1931,7 +1931,9 @@ mod tests {
         let pcm = test_pcm();
         set_fault(Some("abort@run"), true);
         let engine = EngineSupervisor::new(true);
-        lock(&engine.shared.gpu).first = Duration::from_secs(2);
+        // Longer than the CPU retry below, so the move back to the GPU
+        // starts only after the fault is cleared.
+        lock(&engine.shared.gpu).first = Duration::from_secs(15);
         assert!(engine.load(spec()).unwrap().on_gpu, "needs a GPU");
         engine
             .transcribe(pcm.clone(), RunOptions::default())
