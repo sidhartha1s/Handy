@@ -729,6 +729,39 @@ impl Owner {
         self.unload();
     }
 
+    /// Wait for the next command. While a model sits on CPU only because the
+    /// GPU failed, move it back to the GPU once the backoff runs out, as
+    /// soon as no dictation is using it. `None` once every handle is gone.
+    fn next_command(&mut self, queue: &mpsc::Receiver<Command>) -> Option<Command> {
+        loop {
+            let Some(retry_at) = self.gpu_retry_due() else {
+                return queue.recv().ok();
+            };
+            match queue.recv_timeout(retry_at.saturating_duration_since(Instant::now())) {
+                Ok(command) => return Some(command),
+                Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    info!("Moving the transcription model back to the GPU");
+                    self.worker = None;
+                    if let Err(e) = self.ensure_worker() {
+                        error!("Could not reload the transcription model: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// When to try the GPU again for the idle CPU fallback worker, if one
+    /// is loaded.
+    fn gpu_retry_due(&self) -> Option<Instant> {
+        let spec = self.spec.as_ref()?;
+        let info = self.worker.as_ref()?.info.as_ref()?;
+        if info.on_gpu || self.stream.is_some() || self.cpu_only_worker(spec) || spec.pinned() {
+            return None;
+        }
+        lock(&self.shared.gpu).retry_at
+    }
+
     fn load(&mut self, spec: LoadSpec) -> Result<LoadedInfo, EngineError> {
         self.unload();
         self.spec = Some(spec);
