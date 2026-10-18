@@ -446,9 +446,14 @@ impl EngineSupervisor {
     /// the GPU failure, if any, so the next load may use (and list) the GPU
     /// again. A new failure sets the flag again.
     pub fn retry_gpu(&self, reason: &str) {
-        if self.shared.gpu_unavailable.swap(false, Ordering::AcqRel) {
+        let mut gpu = lock(&self.shared.gpu);
+        if gpu.blocks(Instant::now()) {
             info!("Transcription GPU no longer marked unavailable: {}", reason);
         }
+        *gpu = GpuBackoff {
+            first: gpu.first,
+            ..GpuBackoff::default()
+        };
     }
 
     /// The loaded model. A snapshot; never waits on the queue.
