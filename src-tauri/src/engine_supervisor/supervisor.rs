@@ -1597,6 +1597,34 @@ mod unit_tests {
         assert_eq!(ms_to_samples(1500), 24_000);
         assert_eq!(ms_to_samples(-5), 0);
     }
+
+    #[test]
+    fn gpu_comes_back_after_a_backoff_that_doubles_up_to_an_hour() {
+        let min = |m: u64| Duration::from_secs(m * 60);
+        let t0 = Instant::now();
+        let mut gpu = GpuBackoff::default();
+        assert!(!gpu.blocks(t0));
+
+        assert_eq!(gpu.fail(t0), Some(min(5)));
+        assert!(gpu.blocks(t0 + min(4)));
+        // More failures from the same incident don't lengthen the wait.
+        assert_eq!(gpu.fail(t0 + min(1)), None);
+        assert!(!gpu.blocks(t0 + min(5)));
+
+        let mut now = t0 + min(5);
+        let waits: Vec<_> = (0..5)
+            .map(|_| {
+                let wait = gpu.fail(now).unwrap();
+                now += wait;
+                wait.as_secs() / 60
+            })
+            .collect();
+        assert_eq!(waits, [10, 20, 40, 60, 60]);
+
+        // A dictation that finished on the GPU resets the backoff.
+        gpu.failures = 0;
+        assert_eq!(gpu.fail(now), Some(min(5)));
+    }
 }
 
 /// End-to-end checks against a real worker and model. Crash and hang tests
