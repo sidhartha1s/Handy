@@ -744,15 +744,42 @@ impl Owner {
             match queue.recv_timeout(retry_at.saturating_duration_since(Instant::now())) {
                 Ok(command) => return Some(command),
                 Err(mpsc::RecvTimeoutError::Disconnected) => return None,
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    info!("Moving the transcription model back to the GPU");
-                    // A new failure sets it again; a model that loads on
-                    // CPU for another reason is then left alone.
-                    lock(&self.shared.gpu).retry_at = None;
-                    self.worker = None;
-                    if let Err(e) = self.ensure_worker() {
-                        error!("Could not reload the transcription model: {}", e);
-                    }
+                Err(mpsc::RecvTimeoutError::Timeout) => self.move_back_to_gpu(),
+            }
+        }
+    }
+
+    /// Replace the idle CPU fallback worker with one on the GPU. Any failure
+    /// counts against the GPU and the model goes back on CPU, so it is never
+    /// left unloaded. Short deadlines: nobody asked for this load, and a
+    /// dictation that starts meanwhile waits for it.
+    fn move_back_to_gpu(&mut self) {
+        let Some(spec) = self.spec.clone() else {
+            return;
+        };
+        info!("Moving the transcription model back to the GPU");
+        // A new failure sets it again; a model that loads on CPU for
+        // another reason is then left alone.
+        lock(&self.shared.gpu).retry_at = None;
+        self.worker = None;
+        let started = Instant::now();
+        match self.start_worker(&spec, SWAP_DEADLINES) {
+            Ok((worker, info)) => {
+                debug!(
+                    "Worker (pid {}) loaded the model on '{}' in {}ms",
+                    worker.control.pid,
+                    info.backend,
+                    started.elapsed().as_millis()
+                );
+                self.publish_loaded(&info);
+                self.worker = Some(worker);
+            }
+            Err(failure) => {
+                self.shared.mark_gpu_unavailable(format!(
+                    "moving the model back to the GPU failed: {failure}"
+                ));
+                if let Err(e) = self.ensure_worker() {
+                    error!("Could not reload the transcription model on CPU: {}", e);
                 }
             }
         }
