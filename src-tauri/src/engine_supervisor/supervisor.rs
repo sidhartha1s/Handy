@@ -290,7 +290,7 @@ impl Shared {
     /// and crashes or hangs doing so, the GPU is marked unavailable.
     fn probe_devices(&self) {
         let cpu_only = !self.gpu_allowed;
-        match self.hello(cpu_only, true) {
+        match self.hello(cpu_only, true, HELLO_TIMEOUT) {
             Ok(worker) => drop(worker),
             Err(failure) => {
                 error!(
