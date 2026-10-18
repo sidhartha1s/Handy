@@ -210,10 +210,11 @@ struct Shared {
     /// Whether this host may use a GPU at all. When not, every worker is
     /// CPU-only, device probes included.
     gpu_allowed: bool,
-    /// A worker with GPU backends crashed or hung (in backend init, device
-    /// listing, model load or inference). Models load in CPU-only workers,
-    /// and devices are not listed again, until [`EngineSupervisor::retry_gpu`].
-    gpu_unavailable: AtomicBool,
+    /// When a worker with GPU backends crashes or hangs (in backend init,
+    /// device listing, model load or inference), models load in CPU-only
+    /// workers and devices are not listed again until the backoff runs out
+    /// or [`EngineSupervisor::retry_gpu`].
+    gpu: Mutex<GpuBackoff>,
     /// The loaded model (logically: it stays loaded while its worker is
     /// replaced after a crash or cancel).
     loaded: Mutex<Option<LoadedInfo>>,
