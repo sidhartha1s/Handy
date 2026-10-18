@@ -166,6 +166,16 @@ impl GpuBackoff {
     fn worked(&mut self) {
         self.failures = 0;
     }
+
+    /// End the current wait; the failure count stays.
+    fn stop_waiting(&mut self) {
+        self.retry_at = None;
+    }
+
+    fn reset(&mut self) {
+        self.worked();
+        self.stop_waiting();
+    }
 }
 
 fn ms_to_samples(ms: i64) -> usize {
