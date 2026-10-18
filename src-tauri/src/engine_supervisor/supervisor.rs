@@ -101,6 +101,52 @@ impl Deadlines {
     }
 }
 
+/// How long models stay on CPU after the first GPU failure. A one-off hang
+/// (another app filling a 4 GB card, a driver hiccup) must not keep
+/// dictation on CPU, several times slower, until Handy restarts.
+const GPU_RETRY_FIRST: Duration = Duration::from_secs(5 * 60);
+/// Each failure in a row doubles the wait, up to this.
+const GPU_RETRY_MAX: Duration = Duration::from_secs(60 * 60);
+
+/// Whether models may use the GPU, after the GPU failed `failures` times in
+/// a row.
+#[derive(Debug, Clone, Copy)]
+struct GpuBackoff {
+    first: Duration,
+    failures: u32,
+    retry_at: Option<Instant>,
+}
+
+impl Default for GpuBackoff {
+    fn default() -> Self {
+        Self {
+            first: GPU_RETRY_FIRST,
+            failures: 0,
+            retry_at: None,
+        }
+    }
+}
+
+impl GpuBackoff {
+    fn blocks(&self, now: Instant) -> bool {
+        self.retry_at.is_some_and(|at| now < at)
+    }
+
+    /// Turn the GPU off and return for how long, or `None` if it already is.
+    fn fail(&mut self, now: Instant) -> Option<Duration> {
+        if self.blocks(now) {
+            return None;
+        }
+        let wait = self
+            .first
+            .saturating_mul(1 << self.failures.min(16))
+            .min(GPU_RETRY_MAX);
+        self.failures += 1;
+        self.retry_at = Some(now + wait);
+        Some(wait)
+    }
+}
+
 fn ms_to_samples(ms: i64) -> usize {
     (ms.max(0) as usize) * (SAMPLE_RATE as usize / 1000)
 }
