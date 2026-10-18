@@ -1102,12 +1102,15 @@ impl Owner {
                 update,
                 text,
                 language,
-            }) => Ok(Some(Finalized {
-                update,
-                text,
-                language,
-                elapsed: started.elapsed(),
-            })),
+            }) => {
+                self.note_gpu_worked();
+                Ok(Some(Finalized {
+                    update,
+                    text,
+                    language,
+                    elapsed: started.elapsed(),
+                }))
+            }
             Ok(other) => {
                 error!("Stream finalize failed: {}", unexpected(&other));
                 Ok(None)
