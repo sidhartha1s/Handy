@@ -871,7 +871,7 @@ impl Owner {
                     failure
                 ));
                 warn!("Retrying in a CPU-only worker");
-                self.start_worker(&wanted.cpu())?
+                self.start_worker(&wanted.cpu(), START_DEADLINES)?
             }
             Err(failure) => return Err(failure.into()),
         };
