@@ -2005,6 +2005,37 @@ mod tests {
         assert_eq!(worker_count(), 1);
     }
 
+    /// The move back to the GPU fails because the GPU hangs again: it gives
+    /// up at its short deadline, the backoff doubles, and the model stays
+    /// usable on CPU instead of being unloaded.
+    #[test]
+    #[ignore]
+    fn failed_move_back_to_gpu_keeps_the_model_on_cpu() {
+        let pcm = test_pcm();
+        set_fault(Some("abort@run"), true);
+        let engine = EngineSupervisor::new(true);
+        lock(&engine.shared.gpu).first = Duration::from_secs(15);
+        assert!(engine.load(spec()).unwrap().on_gpu, "needs a GPU");
+        engine
+            .transcribe(pcm.clone(), RunOptions::default())
+            .unwrap();
+        assert!(!engine.loaded().unwrap().on_gpu);
+        set_fault(Some("hang@load"), true);
+        let t = Instant::now();
+        while lock(&engine.shared.gpu).failures < 2 {
+            assert!(t.elapsed() < Duration::from_secs(90), "never retried");
+            thread::sleep(Duration::from_millis(50));
+        }
+        println!("move back to the GPU gave up {:?} after the fallback", t.elapsed());
+        assert!(t.elapsed() < Duration::from_secs(15 + 20 + 10));
+        assert!(engine.shared.gpu_unavailable());
+        let info = engine.loaded().expect("the model must stay loaded");
+        assert!(!info.on_gpu);
+        engine.transcribe(pcm, RunOptions::default()).unwrap();
+        assert_eq!(worker_count(), 1);
+        set_fault(None, false);
+    }
+
     /// A GPU driver that crashes while its backend registers, before the
     /// hello: only a CPU-only worker survives it, so that is where the model
     /// loads. The GPU is marked unavailable, later loads stay CPU-only and devices
