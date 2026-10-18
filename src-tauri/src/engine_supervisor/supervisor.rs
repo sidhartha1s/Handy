@@ -289,14 +289,25 @@ impl Shared {
     }
 
     fn gpu_unavailable(&self) -> bool {
-        self.gpu_unavailable.load(Ordering::Acquire)
+        lock(&self.gpu).blocks(Instant::now())
     }
 
-    /// `reason` is logged when this changes the state.
+    /// `reason` is logged when this changes the state. Failures while the
+    /// GPU is already off are the same incident and don't lengthen the wait.
     fn mark_gpu_unavailable(&self, reason: impl fmt::Display) {
-        if !self.gpu_unavailable.swap(true, Ordering::AcqRel) {
-            warn!("Transcription GPU marked unavailable: {}", reason);
+        if let Some(wait) = lock(&self.gpu).fail(Instant::now()) {
+            warn!(
+                "Transcription GPU marked unavailable for {}s: {}",
+                wait.as_secs(),
+                reason
+            );
         }
+    }
+
+    /// A dictation finished on the GPU, so the next failure starts the
+    /// backoff from the shortest wait again.
+    fn gpu_worked(&self) {
+        lock(&self.gpu).failures = 0;
     }
 
     fn epoch(&self) -> u64 {
