@@ -1622,7 +1622,7 @@ mod unit_tests {
         assert_eq!(waits, [10, 20, 40, 60, 60]);
 
         // A dictation that finished on the GPU resets the backoff.
-        gpu.failures = 0;
+        gpu.worked();
         assert_eq!(gpu.fail(now), Some(min(5)));
     }
 }
