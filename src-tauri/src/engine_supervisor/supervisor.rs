@@ -895,14 +895,20 @@ impl Owner {
             }
             Err(failure) => return Err(failure.into()),
         };
+        self.adopt(worker, &info, started);
+        Ok(info)
+    }
+
+    /// Put a worker with its model loaded into the slot.
+    fn adopt(&mut self, worker: Worker, info: &LoadedInfo, started: Instant) {
         debug!(
-            "Worker (pid {}) spawned and loaded the model in {}ms",
+            "Worker (pid {}) spawned and loaded the model on '{}' in {}ms",
             worker.control.pid,
+            info.backend,
             started.elapsed().as_millis()
         );
-        self.publish_loaded(&info);
+        self.publish_loaded(info);
         self.worker = Some(worker);
-        Ok(info)
     }
 
     /// Report the model loaded, unless an unload was requested since and is
