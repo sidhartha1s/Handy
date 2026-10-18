@@ -809,8 +809,8 @@ impl Owner {
     /// is loaded.
     fn gpu_retry_due(&self) -> Option<Instant> {
         let spec = self.spec.as_ref()?;
-        let info = self.worker.as_ref()?.info.as_ref()?;
-        if info.on_gpu || self.stream.is_some() || self.cpu_only_worker(spec) || spec.pinned() {
+        self.worker.as_ref()?.info.as_ref()?;
+        if self.on_gpu() || self.stream.is_some() || self.cpu_only_worker(spec) || spec.pinned() {
             return None;
         }
         lock(&self.shared.gpu).retry_at
