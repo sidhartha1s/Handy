@@ -38,6 +38,23 @@ use transcribe_cpp::{Backend, RunOptions, StreamOptions, StreamText, StreamUpdat
 const HELLO_TIMEOUT: Duration = Duration::from_secs(60);
 /// Model loads stay generous: a slow load is slow, not hung (#1841).
 const LOAD_TIMEOUT: Duration = Duration::from_secs(180);
+#[derive(Debug, Clone, Copy)]
+struct StartDeadlines {
+    hello: Duration,
+    load: Duration,
+}
+
+const START_DEADLINES: StartDeadlines = StartDeadlines {
+    hello: HELLO_TIMEOUT,
+    load: LOAD_TIMEOUT,
+};
+/// Moving an idle model back to the GPU. A GPU spawn and Parakeet load
+/// takes about 2 s, so 20 s each is generous, and a GPU that hangs again
+/// holds up a dictation for 40 s at most, not 4 min.
+const SWAP_DEADLINES: StartDeadlines = StartDeadlines {
+    hello: Duration::from_secs(20),
+    load: Duration::from_secs(20),
+};
 /// Floor for stream calls that do no decoding (begin, reset).
 const CALL_FLOOR: Duration = Duration::from_secs(30);
 /// How long a worker gets to exit after its stdin closes before it's killed.
