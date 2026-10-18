@@ -50,7 +50,7 @@ const START_DEADLINES: StartDeadlines = StartDeadlines {
 };
 /// Moving an idle model back to the GPU. A GPU spawn and Parakeet load
 /// takes about 2 s, so 20 s each is generous, and a GPU that hangs again
-/// holds up a dictation for 40 s at most, not 4 min.
+/// holds up a dictation for 40 s plus the CPU reload, not 4 min.
 const SWAP_DEADLINES: StartDeadlines = StartDeadlines {
     hello: Duration::from_secs(20),
     load: Duration::from_secs(20),
