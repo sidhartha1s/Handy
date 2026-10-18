@@ -842,10 +842,14 @@ impl Owner {
     /// GPU lists the devices in its hello, which keeps the list current (a
     /// GPU that comes back is just noticed). A CPU-only worker would only
     /// see the CPU, so it doesn't list.
-    fn start_worker(&self, spec: &LoadSpec) -> Result<(Worker, LoadedInfo), Failure> {
+    fn start_worker(
+        &self,
+        spec: &LoadSpec,
+        deadlines: StartDeadlines,
+    ) -> Result<(Worker, LoadedInfo), Failure> {
         let cpu_only = self.cpu_only_worker(spec);
-        let mut worker = self.shared.hello(cpu_only, !cpu_only)?;
-        let info = worker.load(spec)?;
+        let mut worker = self.shared.hello(cpu_only, !cpu_only, deadlines.hello)?;
+        let info = worker.load(spec, deadlines.load)?;
         Ok((worker, info))
     }
 
