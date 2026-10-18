@@ -1343,13 +1343,13 @@ impl Worker {
         Ok(worker)
     }
 
-    fn load(&mut self, spec: &LoadSpec) -> Result<LoadedInfo, Failure> {
+    fn load(&mut self, spec: &LoadSpec, deadline: Duration) -> Result<LoadedInfo, Failure> {
         let request = Request::Load {
             path: spec.path.clone(),
             backend: spec.backend,
             device: spec.device.clone(),
         };
-        match self.call(&request, None, LOAD_TIMEOUT)? {
+        match self.call(&request, None, deadline)? {
             Response::Loaded(info) => {
                 self.info = Some(info.clone());
                 Ok(info)
