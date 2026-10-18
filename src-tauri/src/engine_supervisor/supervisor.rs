@@ -900,14 +900,22 @@ impl Owner {
         }
     }
 
-    /// Deadlines for the device the current worker's model runs on.
-    fn deadlines(&self) -> Deadlines {
-        let on_gpu = self
-            .worker
+    fn on_gpu(&self) -> bool {
+        self.worker
             .as_ref()
             .and_then(|worker| worker.info.as_ref())
-            .is_some_and(|info| info.on_gpu);
-        Deadlines::for_device(on_gpu)
+            .is_some_and(|info| info.on_gpu)
+    }
+
+    fn note_gpu_worked(&self) {
+        if self.on_gpu() {
+            self.shared.gpu_worked();
+        }
+    }
+
+    /// Deadlines for the device the current worker's model runs on.
+    fn deadlines(&self) -> Deadlines {
+        Deadlines::for_device(self.on_gpu())
     }
 
     /// A call that [`EngineSupervisor::cancel`] can stop. Returns
