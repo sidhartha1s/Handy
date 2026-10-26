@@ -1979,6 +1979,26 @@ mod tests {
         set_fault(None, false);
     }
 
+    /// A GPU run that fails as out of memory (what a driver reset leaves
+    /// behind: every later run in that worker fails too) is retried in a
+    /// fresh worker on CPU, like a crash, instead of failing every dictation.
+    #[test]
+    #[ignore]
+    fn gpu_out_of_memory_recovers_in_a_fresh_worker() {
+        let pcm = test_pcm();
+        set_fault(Some("oom@run"), true);
+        let engine = EngineSupervisor::new(true);
+        assert!(engine.load(spec()).unwrap().on_gpu, "needs a GPU");
+        let transcript = engine
+            .transcribe(pcm.clone(), RunOptions::default())
+            .unwrap();
+        println!("recovered after GPU OOM: {}", transcript.text);
+        assert!(engine.shared.gpu_unavailable());
+        assert!(!engine.loaded().unwrap().on_gpu);
+        assert_eq!(worker_count(), 1);
+        set_fault(None, false);
+    }
+
     /// A GPU failure that doesn't repeat: once the backoff runs out, the
     /// idle CPU fallback moves back to the GPU by itself, with no reload or
     /// settings change.
