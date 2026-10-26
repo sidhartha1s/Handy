@@ -114,8 +114,12 @@ pub fn run() -> i32 {
             }
             Request::Run { options } => match session.as_mut() {
                 Some((session, info)) => {
-                    inject_fault("run", info.on_gpu);
-                    match session.run(&pcm, &options) {
+                    let result = if inject_fault("run", info.on_gpu) {
+                        Err(transcribe_cpp::Error::OutOfMemory("injected".to_string()))
+                    } else {
+                        session.run(&pcm, &options)
+                    };
+                    match result {
                         Ok(transcript) => Response::Transcript(transcript),
                         Err(e) => Response::Error(e.to_string()),
                     }
