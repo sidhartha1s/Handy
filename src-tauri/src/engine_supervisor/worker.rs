@@ -366,12 +366,16 @@ fn inject_fault(stage: &str, on_gpu: bool) -> bool {
         "hang" => loop {
             std::thread::sleep(std::time::Duration::from_secs(3600));
         },
+        "oom" => return true,
         _ => {}
     }
+    false
 }
 
 #[cfg(not(debug_assertions))]
-fn inject_fault(_stage: &str, _on_gpu: bool) {}
+fn inject_fault(_stage: &str, _on_gpu: bool) -> bool {
+    false
+}
 
 /// Logs go to stderr as `\x01LEVEL\ttarget\tmessage` lines; the parent
 /// re-logs them at the same level.
