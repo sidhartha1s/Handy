@@ -330,9 +330,9 @@ fn load(
 
 /// Debug-build fault injection for exercising crash/hang recovery:
 /// `HANDY_WORKER_FAULT=<abort|segv|hang|oom>@<init|list|load|run|feed|finalize>`
-/// (`abort` is what `GGML_ASSERT` ends in, `segv` a real invalid memory write,
-/// `oom` returns true so the caller fails as out of memory; only `run` does)
-/// (`init` is backend registration, before the hello). With `HANDY_WORKER_FAULT_ONCE=<marker
+/// (`abort` is what `GGML_ASSERT` ends in, `segv` a real invalid memory write)
+/// (`init` is backend registration, before the hello). `oom` makes it return
+/// true so the caller fails as out of memory; only `run` honours it. With `HANDY_WORKER_FAULT_ONCE=<marker
 /// path>` it fires only in the first worker to reach that stage (the marker
 /// file records that it fired). With `HANDY_WORKER_FAULT_GPU_ONLY=1` it fires
 /// only on a GPU (backend init and device listing count as GPU work unless
