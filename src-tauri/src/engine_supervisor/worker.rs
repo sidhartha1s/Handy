@@ -121,6 +121,13 @@ pub fn run() -> i32 {
                     };
                     match result {
                         Ok(transcript) => Response::Transcript(transcript),
+                        // After a driver reset every later GPU run in this
+                        // process fails this way, so exit: the parent treats it
+                        // as a crash and retries in a fresh worker.
+                        Err(e @ transcribe_cpp::Error::OutOfMemory(_)) if info.on_gpu => {
+                            error!("Exiting after running out of GPU memory: {}", e);
+                            return 1;
+                        }
                         Err(e) => Response::Error(e.to_string()),
                     }
                 }
