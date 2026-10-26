@@ -327,18 +327,18 @@ fn load(
 /// only on a GPU (backend init and device listing count as GPU work unless
 /// the worker is CPU-only), so recovery on CPU can succeed.
 #[cfg(debug_assertions)]
-fn inject_fault(stage: &str, on_gpu: bool) {
+fn inject_fault(stage: &str, on_gpu: bool) -> bool {
     let Ok(spec) = std::env::var("HANDY_WORKER_FAULT") else {
-        return;
+        return false;
     };
     let Some((kind, at)) = spec.split_once('@') else {
-        return;
+        return false;
     };
     if at != stage {
-        return;
+        return false;
     }
     if !on_gpu && std::env::var_os("HANDY_WORKER_FAULT_GPU_ONLY").is_some() {
-        return;
+        return false;
     }
     if let Some(marker) = std::env::var_os("HANDY_WORKER_FAULT_ONCE") {
         if std::fs::OpenOptions::new()
@@ -347,7 +347,7 @@ fn inject_fault(stage: &str, on_gpu: bool) {
             .open(&marker)
             .is_err()
         {
-            return;
+            return false;
         }
     }
     eprintln!("injected fault: {kind} at {stage}");
