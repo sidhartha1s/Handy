@@ -1989,9 +1989,7 @@ mod tests {
         set_fault(Some("oom@run"), true);
         let engine = EngineSupervisor::new(true);
         assert!(engine.load(spec()).unwrap().on_gpu, "needs a GPU");
-        let transcript = engine
-            .transcribe(pcm.clone(), RunOptions::default())
-            .unwrap();
+        let transcript = engine.transcribe(pcm, RunOptions::default()).unwrap();
         println!("recovered after GPU OOM: {}", transcript.text);
         assert!(engine.shared.gpu_unavailable());
         assert!(!engine.loaded().unwrap().on_gpu);
