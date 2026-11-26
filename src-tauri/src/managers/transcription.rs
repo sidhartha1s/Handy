@@ -88,22 +88,35 @@ impl Segmenter {
 }
 
 /// A key-up tail under SEG_MIN is too short to transcribe alone: append it to
-/// the last queued segment, else to `last` (already transcribed), which then
-/// runs again with it. Returns whether `last` was used.
-fn fold_short_tail(tail: &mut Vec<f32>, queued: &mut [Vec<f32>], last: Option<Vec<f32>>) -> bool {
+/// the last queued segment, else to `last` (the last background segment's
+/// audio, and whether its text is the last in `texts`), which then runs again
+/// with it in place of its text. Never builds a run longer than SEG_MAX.
+fn fold_short_tail(
+    tail: &mut Vec<f32>,
+    queued: &mut [Vec<f32>],
+    last: Option<(Vec<f32>, bool)>,
+    texts: &mut Vec<String>,
+) {
     if tail.is_empty() || tail.len() >= SEG_MIN {
-        return false;
+        return;
     }
     if let Some(prev) = queued.last_mut() {
-        prev.append(tail);
-        return false;
+        if prev.len() + tail.len() <= SEG_MAX {
+            prev.append(tail);
+        }
+        return;
     }
-    let Some(mut prev) = last else {
-        return false;
+    let Some((mut prev, pushed)) = last else {
+        return;
     };
+    if prev.len() + tail.len() > SEG_MAX {
+        return;
+    }
+    if pushed {
+        texts.pop();
+    }
     prev.append(tail);
     *tail = prev;
-    true
 }
 
 /// Whether the audio left at key-up is too long to work through segment by
@@ -2564,7 +2577,11 @@ mod tests {
         // Joins the last queued segment; the transcribed one is not reused.
         let mut tail = seconds(2, 0.5);
         let mut queued = vec![seconds(12, 0.5)];
-        assert!(!fold_short_tail(&mut tail, &mut queued, Some(seconds(11, 0.5))));
+        assert!(!fold_short_tail(
+            &mut tail,
+            &mut queued,
+            Some(seconds(11, 0.5))
+        ));
         assert!(tail.is_empty());
         assert_eq!(queued[0].len(), 14 * 16_000);
 
