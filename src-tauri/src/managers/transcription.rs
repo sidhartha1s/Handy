@@ -48,14 +48,15 @@ const PIECE_CUT_SEARCH: usize = 5 * 16_000;
 /// Segment batching: a segment ends at a speech pause or after SEG_MAX. If more
 /// than BEHIND_LIMIT of audio is still untranscribed at key-up, one batch run
 /// over the remainder is faster than working through it segment by segment.
-const SEG_MAX: usize = 12 * 16_000;
-const SEG_CUT_SEARCH: usize = 4 * 16_000;
-/// A pause closes a segment only once it holds this much audio, and a shorter
-/// key-up tail is transcribed with the segment before it. Parakeet run on a
-/// 2 s phrase alone heard "act like a chief" as "Achieve" and "Leonida files"
-/// as "Leon Dafiles"; with 10 s of context it got both right.
+/// Segments are as long as batch Parakeet pieces: Parakeet on a lone 2 s phrase
+/// heard "act like a chief" as "Achieve", and with 12 s segments it still wrote
+/// "Hey Chloe" and "Leon Dafiles"; 30 s segments got all three right, the same
+/// as the whole take. A pause closes a segment only once it holds SEG_MIN, and
+/// a shorter key-up tail is transcribed with the segment before it.
+const SEG_MAX: usize = PARAKEET_MAX_PIECE;
+const SEG_CUT_SEARCH: usize = PIECE_CUT_SEARCH;
 const SEG_MIN: usize = 10 * 16_000;
-const BEHIND_LIMIT: usize = 20 * 16_000;
+const BEHIND_LIMIT: usize = 2 * SEG_MAX;
 
 /// Collects live audio into segments for background batch transcription.
 #[derive(Default)]
