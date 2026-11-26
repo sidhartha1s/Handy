@@ -2536,27 +2536,50 @@ mod tests {
     #[test]
     fn segment_over_cap_is_cut_in_a_pause_and_remainder_kept() {
         let mut seg = Segmenter::default();
-        let mut audio = seconds(15, 0.5);
-        // Silent gap at 10 s, inside the 4 s search window before the 12 s cap.
-        audio[10 * 16_000..10 * 16_000 + 4_800].fill(0.0);
+        let mut audio = seconds(35, 0.5);
+        // Silent gap at 27 s, inside the 5 s search window before the 30 s cap.
+        audio[27 * 16_000..27 * 16_000 + 4_800].fill(0.0);
         for chunk in audio.chunks(1_600) {
             seg.feed(chunk);
         }
         assert_eq!(seg.ready.len(), 1);
         let cut = seg.ready[0].len();
         assert!(
-            (10 * 16_000..10 * 16_000 + 4_800).contains(&cut),
+            (27 * 16_000..27 * 16_000 + 4_800).contains(&cut),
             "cut {cut}"
         );
         assert!(cut <= SEG_MAX);
-        assert_eq!(cut + seg.buf.len(), 15 * 16_000, "no audio lost");
+        assert_eq!(cut + seg.buf.len(), 35 * 16_000, "no audio lost");
     }
 
     #[test]
-    fn backlog_over_twenty_seconds_takes_the_batch_fallback() {
-        assert!(!is_behind(10 * 16_000, 10 * 16_000));
-        assert!(is_behind(10 * 16_000, 10 * 16_000 + 1));
+    fn backlog_over_sixty_seconds_takes_the_batch_fallback() {
+        assert!(!is_behind(30 * 16_000, 30 * 16_000));
+        assert!(is_behind(30 * 16_000, 30 * 16_000 + 1));
         assert!(!is_behind(0, 0));
+    }
+
+    #[test]
+    fn short_tail_joins_the_segment_before_it() {
+        // Joins the last queued segment; the transcribed one is not reused.
+        let mut tail = seconds(2, 0.5);
+        let mut queued = vec![seconds(12, 0.5)];
+        assert!(!fold_short_tail(&mut tail, &mut queued, Some(seconds(11, 0.5))));
+        assert!(tail.is_empty());
+        assert_eq!(queued[0].len(), 14 * 16_000);
+
+        // Nothing queued: the transcribed segment runs again with the tail.
+        let mut tail = seconds(2, 0.5);
+        assert!(fold_short_tail(&mut tail, &mut [], Some(seconds(11, 0.5))));
+        assert_eq!(tail.len(), 13 * 16_000);
+
+        // A tail of SEG_MIN or more, or no earlier segment, stays alone.
+        let mut tail = seconds(10, 0.5);
+        assert!(!fold_short_tail(&mut tail, &mut [], Some(seconds(11, 0.5))));
+        assert_eq!(tail.len(), SEG_MIN);
+        let mut tail = seconds(2, 0.5);
+        assert!(!fold_short_tail(&mut tail, &mut [], None));
+        assert_eq!(tail.len(), 2 * 16_000);
     }
 
     #[test]
