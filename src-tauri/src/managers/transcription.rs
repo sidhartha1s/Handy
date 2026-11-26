@@ -2569,29 +2569,54 @@ mod tests {
 
     #[test]
     fn short_tail_joins_the_segment_before_it() {
-        // Joins the last queued segment; the transcribed one is not reused.
-        let mut tail = seconds(2, 0.5);
-        let mut queued = vec![seconds(12, 0.5)];
-        assert!(!fold_short_tail(
+        let texts = |t: &[&str]| t.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+
+        // Joins the last queued segment; the transcribed one keeps its text.
+        let (mut tail, mut queued, mut out) =
+            (seconds(2, 0.5), vec![seconds(12, 0.5)], texts(&["a"]));
+        fold_short_tail(
             &mut tail,
             &mut queued,
-            Some(seconds(11, 0.5))
-        ));
+            Some((seconds(11, 0.5), true)),
+            &mut out,
+        );
         assert!(tail.is_empty());
         assert_eq!(queued[0].len(), 14 * 16_000);
+        assert_eq!(out, texts(&["a"]));
 
-        // Nothing queued: the transcribed segment runs again with the tail.
-        let mut tail = seconds(2, 0.5);
-        assert!(fold_short_tail(&mut tail, &mut [], Some(seconds(11, 0.5))));
+        // Nothing queued: the transcribed segment runs again and its text goes.
+        let (mut tail, mut out) = (seconds(2, 0.5), texts(&["a", "b"]));
+        fold_short_tail(&mut tail, &mut [], Some((seconds(11, 0.5), true)), &mut out);
         assert_eq!(tail.len(), 13 * 16_000);
+        assert_eq!(out, texts(&["a"]));
+
+        // Its text was empty and never pushed: the earlier text stays.
+        let (mut tail, mut out) = (seconds(2, 0.5), texts(&["a"]));
+        fold_short_tail(
+            &mut tail,
+            &mut [],
+            Some((seconds(11, 0.5), false)),
+            &mut out,
+        );
+        assert_eq!(tail.len(), 13 * 16_000);
+        assert_eq!(out, texts(&["a"]));
+
+        // No run over SEG_MAX: a 9 s tail stays alone after a 30 s segment.
+        let (mut tail, mut out) = (seconds(9, 0.5), texts(&["a"]));
+        fold_short_tail(&mut tail, &mut [], Some((seconds(30, 0.5), true)), &mut out);
+        assert_eq!(tail.len(), 9 * 16_000);
+        assert_eq!(out, texts(&["a"]));
+        let (mut tail, mut queued) = (seconds(9, 0.5), vec![seconds(30, 0.5)]);
+        fold_short_tail(&mut tail, &mut queued, None, &mut out);
+        assert_eq!((tail.len(), queued[0].len()), (9 * 16_000, SEG_MAX));
 
         // A tail of SEG_MIN or more, or no earlier segment, stays alone.
         let mut tail = seconds(10, 0.5);
-        assert!(!fold_short_tail(&mut tail, &mut [], Some(seconds(11, 0.5))));
-        assert_eq!(tail.len(), SEG_MIN);
+        fold_short_tail(&mut tail, &mut [], Some((seconds(11, 0.5), true)), &mut out);
+        assert_eq!((tail.len(), out.len()), (SEG_MIN, 1));
         let mut tail = seconds(2, 0.5);
-        assert!(!fold_short_tail(&mut tail, &mut [], None));
-        assert_eq!(tail.len(), 2 * 16_000);
+        fold_short_tail(&mut tail, &mut [], None, &mut out);
+        assert_eq!((tail.len(), out.len()), (2 * 16_000, 1));
     }
 
     #[test]
