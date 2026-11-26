@@ -50,6 +50,11 @@ const PIECE_CUT_SEARCH: usize = 5 * 16_000;
 /// over the remainder is faster than working through it segment by segment.
 const SEG_MAX: usize = 12 * 16_000;
 const SEG_CUT_SEARCH: usize = 4 * 16_000;
+/// A pause closes a segment only once it holds this much audio, and a shorter
+/// key-up tail is transcribed with the segment before it. Parakeet run on a
+/// 2 s phrase alone heard "act like a chief" as "Achieve" and "Leonida files"
+/// as "Leon Dafiles"; with 10 s of context it got both right.
+const SEG_MIN: usize = 10 * 16_000;
 const BEHIND_LIMIT: usize = 20 * 16_000;
 
 /// Collects live audio into segments for background batch transcription.
