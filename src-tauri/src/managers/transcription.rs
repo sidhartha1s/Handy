@@ -1228,11 +1228,14 @@ impl TranscriptionManager {
             let Some(audio) = seg.ready.pop_front() else {
                 continue;
             };
+            let kept = audio.clone();
             match transcribe(audio, &mut detected) {
                 Ok(Some(text)) => {
-                    if !text.is_empty() {
+                    let pushed = !text.is_empty();
+                    if pushed {
                         texts.push(text);
                     }
+                    last = Some((kept, pushed));
                     let (shown, _) =
                         preview_script.convert(&join_pieces(texts.clone()), "", &run.languages);
                     emit_stream_text(&self.app_handle, &shown, "");
