@@ -1271,16 +1271,9 @@ impl TranscriptionManager {
         let backlog: usize = queued.iter().map(Vec::len).sum();
         // Decided before the tail merge: re-running a finished segment is not backlog.
         let behind = is_behind(backlog, tail.len());
-        if !tail.is_empty() && tail.len() < SEG_MIN {
-            if let Some(prev) = queued.last_mut() {
-                prev.append(&mut tail);
-            } else if let Some((mut prev, pushed)) = last.take() {
-                if pushed {
-                    texts.pop();
-                }
-                prev.append(&mut tail);
-                tail = prev;
-            }
+        let (last_audio, last_pushed) = last.map_or((None, false), |(a, p)| (Some(a), p));
+        if fold_short_tail(&mut tail, &mut queued, last_audio) && last_pushed {
+            texts.pop();
         }
         let finished = if behind {
             warn!(
