@@ -1300,14 +1300,9 @@ impl TranscriptionManager {
         let mut tail = std::mem::take(&mut seg.buf);
         let tail_ms = tail.len() / 16;
         let mut queued: Vec<Vec<f32>> = seg.ready.drain(..).collect();
+        fold_short_tail(&mut tail, &mut queued, last, &mut texts);
         let backlog: usize = queued.iter().map(Vec::len).sum();
-        // Decided before the tail merge: re-running a finished segment is not backlog.
-        let behind = is_behind(backlog, tail.len());
-        let (last_audio, last_pushed) = last.map_or((None, false), |(a, p)| (Some(a), p));
-        if fold_short_tail(&mut tail, &mut queued, last_audio) && last_pushed {
-            texts.pop();
-        }
-        let finished = if behind {
+        let finished = if is_behind(backlog, tail.len()) {
             warn!(
                 "[FALLBACK] segment backlog {} segs {:.1}s, batching remainder",
                 queued.len() + 1,
