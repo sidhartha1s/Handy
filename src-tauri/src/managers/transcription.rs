@@ -1264,9 +1264,20 @@ impl TranscriptionManager {
 
         let started = Instant::now();
         let background = texts.len();
-        let tail = std::mem::take(&mut seg.buf);
+        let mut tail = std::mem::take(&mut seg.buf);
         let tail_ms = tail.len() / 16;
-        let queued: Vec<Vec<f32>> = seg.ready.drain(..).collect();
+        let mut queued: Vec<Vec<f32>> = seg.ready.drain(..).collect();
+        if !tail.is_empty() && tail.len() < SEG_MIN {
+            if let Some(prev) = queued.last_mut() {
+                prev.append(&mut tail);
+            } else if let Some((mut prev, pushed)) = last.take() {
+                if pushed {
+                    texts.pop();
+                }
+                prev.append(&mut tail);
+                tail = prev;
+            }
+        }
         let backlog: usize = queued.iter().map(Vec::len).sum();
         let finished = if is_behind(backlog, tail.len()) {
             warn!(
