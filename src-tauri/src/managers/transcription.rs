@@ -1281,8 +1281,7 @@ impl TranscriptionManager {
                 tail = prev;
             }
         }
-        let backlog: usize = queued.iter().map(Vec::len).sum();
-        let finished = if is_behind(backlog, tail.len()) {
+        let finished = if behind {
             warn!(
                 "[FALLBACK] segment backlog {} segs {:.1}s, batching remainder",
                 queued.len() + 1,
