@@ -80,7 +80,7 @@ impl Segmenter {
     }
 
     fn pause(&mut self) {
-        if !self.buf.is_empty() {
+        if self.buf.len() >= SEG_MIN {
             self.ready.push_back(std::mem::take(&mut self.buf));
         }
     }
