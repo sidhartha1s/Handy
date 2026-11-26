@@ -1186,6 +1186,8 @@ impl TranscriptionManager {
         let mut preview_script = PreviewScript::new(run.chinese_script, &run.output_language);
         let mut seg = Segmenter::default();
         let mut texts: Vec<String> = Vec::new();
+        // Last background segment's audio, and whether its text is the last in `texts`.
+        let mut last: Option<(Vec<f32>, bool)> = None;
         let mut detected: Option<String> = None;
         // `Ok(None)`: the engine failed; the caller falls back to full batch.
         let transcribe = |audio: Vec<f32>, detected: &mut Option<String>| {
