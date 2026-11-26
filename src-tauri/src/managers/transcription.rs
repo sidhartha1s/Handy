@@ -2502,17 +2502,21 @@ mod tests {
     }
 
     #[test]
-    fn pause_closes_the_segment_and_empty_pause_adds_nothing() {
+    fn pause_closes_the_segment_only_once_it_holds_seg_min() {
         let mut seg = Segmenter::default();
+        seg.pause();
+        assert!(seg.ready.is_empty());
+        // Short phrases keep accumulating so the model hears them in context.
+        seg.feed(&seconds(3, 0.5));
+        seg.pause();
+        seg.feed(&seconds(4, 0.5));
         seg.pause();
         assert!(seg.ready.is_empty());
         seg.feed(&seconds(3, 0.5));
         seg.pause();
-        seg.feed(&seconds(2, 0.5));
-        seg.pause();
         seg.feed(&seconds(1, 0.5));
         let lens: Vec<usize> = seg.ready.iter().map(Vec::len).collect();
-        assert_eq!(lens, vec![3 * 16_000, 2 * 16_000]);
+        assert_eq!(lens, vec![10 * 16_000]);
         assert_eq!(seg.buf.len(), 16_000);
     }
 
