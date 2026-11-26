@@ -1267,6 +1267,9 @@ impl TranscriptionManager {
         let mut tail = std::mem::take(&mut seg.buf);
         let tail_ms = tail.len() / 16;
         let mut queued: Vec<Vec<f32>> = seg.ready.drain(..).collect();
+        let backlog: usize = queued.iter().map(Vec::len).sum();
+        // Decided before the tail merge: re-running a finished segment is not backlog.
+        let behind = is_behind(backlog, tail.len());
         if !tail.is_empty() && tail.len() < SEG_MIN {
             if let Some(prev) = queued.last_mut() {
                 prev.append(&mut tail);
